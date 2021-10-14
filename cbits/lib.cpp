@@ -48,20 +48,14 @@ extern "C" {
     *len = arrBuf.count_elements();
   }
 
-  void get_array_elems(ondemand::array *arrPtr, ondemand::value **out) {
-    int index = 0;
-    std::cout << *arrPtr << std::endl;
-    arrPtr->reset();
-    for (ondemand::value elem : *arrPtr) { 
-      /* std::cout << arrPtr << std::endl; */
-      /* std::cout << elem << std::endl; */
-      /* std::cout << sizeof(elem) << std::endl; */
-      /* std::cout << out << std::endl; */
-      *out[index++] = elem;
+  void get_array_elems(ondemand::array &arrPtr, ondemand::value **out) {
+    size_t index = 0;
+    for (ondemand::value elem : arrPtr) { 
+      /* TODO do alloc in haskell */
+      ondemand::value *something = new ondemand::value{};
+      *something = elem;
+      out[index++] = something;
     }
-    std::cout << out[0] << std::endl;
-    std::cout << out[1] << std::endl;
-    std::cout << out[2] << std::endl;
   }
 
   void find_field_unordered(

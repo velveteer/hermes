@@ -179,23 +179,6 @@ getString valPtr =
     handleError errPtr
     peekCString =<< peek ptr
 
--- getArray :: Ptr JSONValue -> IO (Ptr JSONArray, Int)
--- getArray valPtr =
---   alloca $ \lenPtr ->
---   alloca $ \errPtr -> do
---     arrPtr <- mallocForeignPtrBytes 64
---     withForeignPtr arrPtr $ \ptr -> do
---       getArrayFromValueImpl valPtr ptr lenPtr errPtr
---       handleError errPtr
---       len <- fromEnum <$> peek lenPtr
---       pure (ptr, len)
-
--- getArrayElems :: (Ptr JSONArray, Int) -> IO [Ptr JSONValue]
--- getArrayElems (arrPtr, len) = do
---   allocaArray len $ \outPtr -> do
---     getArrayElemsImpl arrPtr outPtr
---     peekArray len outPtr
-
 withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
 withArrayElems valPtr =
   alloca $ \lenPtr ->
@@ -204,11 +187,12 @@ withArrayElems valPtr =
     getArrayFromValueImpl valPtr arrPtr lenPtr errPtr
     handleError errPtr
     len <- fromEnum <$> peek lenPtr
-    print $ "arr length: " <> show len
     allocaArray len $ \outPtr -> do
       getArrayElemsImpl arrPtr outPtr
+      -- TODO Write construct/destruct foreignptr
       ptrs <- peekArray len outPtr
-      traverse parseJSON ptrs
+      newPtrs <- traverse newForeignPtr_ ptrs
+      traverse (\p -> withForeignPtr p $ \ptr -> parseJSON ptr) newPtrs
 
 (.:) :: FromJSON a => Ptr JSONObject -> String -> IO a
 infixl 5 .:
@@ -262,12 +246,7 @@ type Value = Ptr JSONValue
 class FromJSON a where
   parseJSON :: Ptr JSONValue -> IO a
   parseJSONList :: Ptr JSONValue -> IO [a]
-  parseJSONList v = do
-    -- arrAndLen <- getArray v
-    -- pure []
-    withArrayElems v
-    -- ptrs <- getArrayElems arrAndLen
-    -- traverse parseJSON ptrs
+  parseJSONList = withArrayElems
 
 instance FromJSON Text where
   parseJSON = fmap T.pack . getString
