@@ -25,15 +25,24 @@ extern "C" {
     return error_message(error);
   }
 
-  void get_raw_json_str(ondemand::document *docPtr, std::string_view &out, error_code &error) {
+  void get_raw_json_str(
+      ondemand::document *docPtr, 
+      std::string_view &out, 
+      error_code &error) {
     docPtr->raw_json().tie(out, error);
   }
 
-  void get_document_value(ondemand::document *docPtr, ondemand::value &out, error_code &error) {
+  void get_document_value(
+      ondemand::document *docPtr, 
+      ondemand::value &out, 
+      error_code &error) {
     docPtr->get_value().tie(out, error);
   }
 
-  void get_object_from_value(ondemand::value *valPtr, ondemand::object &out, error_code &error) {
+  void get_object_from_value(
+      ondemand::value *valPtr, 
+      ondemand::object &out, 
+      error_code &error) {
     valPtr->get_object().tie(out, error);
   }
 
@@ -51,10 +60,7 @@ extern "C" {
   void get_array_elems(ondemand::array &arrPtr, ondemand::value **out) {
     size_t index = 0;
     for (ondemand::value elem : arrPtr) { 
-      /* TODO do alloc in haskell */
-      ondemand::value *something = new ondemand::value{};
-      *something = elem;
-      out[index++] = something;
+      *out[index++] = elem;
     }
   }
 
@@ -75,4 +81,18 @@ extern "C" {
     valPtr->get_string().tie(buf, error);
     *out = std::string{buf}.c_str();
   }
+
+  ondemand::value **make_values_array(size_t len, ondemand::value **out) {
+    for (size_t i = 0; i < len; ++i) {
+      out[i] = new ondemand::value();
+    }
+    return out;
+  }
+
+  void delete_values_array(size_t *len, ondemand::value **vals) {
+    for (size_t i = 0; i < *len; ++i) {
+      delete vals[i];
+    }
+  }
+
 }

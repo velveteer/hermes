@@ -5,7 +5,7 @@
 module MyLib (test) where
 
 import Control.Exception (Exception, mask_, throwIO, toException)
-import Control.Monad ((>=>))
+import Control.Monad ((>=>), replicateM)
 import qualified Data.Aeson as Aeson
 import Data.ByteString
 import Data.Maybe (fromMaybe)
@@ -50,6 +50,12 @@ foreign import ccall unsafe "parser_init" parserInit
 
 foreign import ccall unsafe "&parser_destroy" parserDestroy
   :: FunPtr (Ptr SIMDParser -> IO ())
+
+foreign import ccall unsafe "make_values_array" makeValuesImpl
+  :: CSize -> Ptr (Ptr JSONValue) -> IO (Ptr (Ptr JSONValue))
+
+foreign import ccall unsafe "&delete_values_array" deleteValuesImpl
+  :: FunPtr (Ptr CSize -> Ptr (Ptr JSONValue) -> IO ())
 
 foreign import ccall unsafe "get_iterator" getIterator
   :: Ptr SIMDParser -> CString -> CInt -> Ptr SIMDDocument -> ErrPtr -> IO ()
@@ -127,43 +133,34 @@ handleError errPtr = do
     errStr <- peekCString =<< getErrorMessageImpl errPtr
     throwIO . SIMDException $ errStr
 
-getDocument :: Ptr SIMDParser -> ByteString -> IO (Ptr SIMDDocument)
-getDocument parserPtr bytes =
-  useAsCStringLen bytes $ \(cstr, len) -> do
-    docPtr <- mallocForeignPtrBytes 64
-    alloca $ \errPtr ->
-      withForeignPtr docPtr $ \ptr -> do
-        getIterator parserPtr cstr (toEnum len) ptr errPtr
-        handleError errPtr
-        pure ptr
-
-getDocumentValue :: Ptr SIMDDocument -> IO (Ptr JSONValue)
-getDocumentValue docPtr = do
-  valPtr <- mallocForeignPtrBytes 64
-  alloca $ \errPtr ->
-    withForeignPtr valPtr $ \ptr -> do
-      getDocumentValueImpl docPtr ptr errPtr
+withDocumentValue :: Ptr SIMDParser -> ByteString -> (Ptr JSONValue -> IO a) -> IO a
+withDocumentValue parserPtr bytes action =
+  useAsCStringLen bytes $ \(cstr, len) ->
+    allocaBytes 64 $ \vPtr ->
+    allocaBytes 64 $ \dPtr ->
+    alloca $ \errPtr -> do
+      getIterator parserPtr cstr (toEnum len) dPtr errPtr
       handleError errPtr
-      pure ptr
-
-getObjectFromValue :: Ptr JSONValue -> IO (Ptr JSONObject)
-getObjectFromValue valPtr = do
-  objPtr <- mallocForeignPtrBytes 64
-  alloca $ \errPtr ->
-    withForeignPtr objPtr $ \ptr -> do
-      getObjectFromValueImpl valPtr ptr errPtr
+      getDocumentValueImpl dPtr vPtr errPtr
       handleError errPtr
-      pure ptr
+      action vPtr
 
-findFieldUnordered :: Ptr JSONObject -> String -> IO (Ptr JSONValue)
-findFieldUnordered objPtr string =
-  withCString string $ \cstr -> do
-    valPtr <- mallocForeignPtrBytes 64
-    alloca $ \errPtr ->
-      withForeignPtr valPtr $ \ptr -> do
-        findFieldUnorderedImpl objPtr cstr ptr errPtr
-        handleError errPtr
-        pure ptr
+withObject :: Ptr JSONValue -> (Ptr JSONObject -> IO a) -> IO a
+withObject valPtr action =
+  allocaBytes 64 $ \oPtr ->
+  alloca $ \errPtr -> do
+    getObjectFromValueImpl valPtr oPtr errPtr
+    handleError errPtr
+    action oPtr
+
+withField :: Ptr JSONObject -> String -> (Ptr JSONValue -> IO a) -> IO a
+withField objPtr key action =
+  withCString key $ \cstr ->
+  allocaBytes 64 $ \vPtr ->
+  alloca $ \errPtr ->  do
+    findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    handleError errPtr
+    action vPtr
 
 getInt :: Ptr JSONValue -> IO Int
 getInt valPtr =
@@ -179,6 +176,23 @@ getString valPtr =
     handleError errPtr
     peekCString =<< peek ptr
 
+mkValues :: Int -> IO (ForeignPtr (Ptr JSONValue))
+mkValues len = mask_ $
+  allocaArray (toEnum len) $ \outPtr -> do
+    ptr <- mallocForeignPtr
+    withForeignPtr ptr $ \lenPtr -> do
+      poke lenPtr (toEnum len)
+      vals <- makeValuesImpl (toEnum len) outPtr
+      newForeignPtrEnv deleteValuesImpl lenPtr vals
+
+withArrayValues :: Ptr JSONArray -> Int -> ([Ptr JSONValue] -> IO a) -> IO a
+withArrayValues arrPtr len action = do
+  cells <- mkValues len
+  withForeignPtr cells $ \outPtr -> do
+    getArrayElemsImpl arrPtr outPtr
+    ptrs <- peekArray len outPtr
+    action ptrs
+
 withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
 withArrayElems valPtr =
   alloca $ \lenPtr ->
@@ -187,18 +201,12 @@ withArrayElems valPtr =
     getArrayFromValueImpl valPtr arrPtr lenPtr errPtr
     handleError errPtr
     len <- fromEnum <$> peek lenPtr
-    allocaArray len $ \outPtr -> do
-      getArrayElemsImpl arrPtr outPtr
-      -- TODO Write construct/destruct foreignptr
-      ptrs <- peekArray len outPtr
-      newPtrs <- traverse newForeignPtr_ ptrs
-      traverse (\p -> withForeignPtr p $ \ptr -> parseJSON ptr) newPtrs
+    withArrayValues arrPtr len $ \ptrs ->
+      traverse parseJSON ptrs
 
 (.:) :: FromJSON a => Ptr JSONObject -> String -> IO a
 infixl 5 .:
-objPtr .: key = do
-  valPtr <- findFieldUnordered objPtr key
-  parseJSON valPtr
+objPtr .: key = withField objPtr key parseJSON
 
 getRawJSONString :: Ptr SIMDDocument -> IO ByteString
 getRawJSONString docPtr =
@@ -219,8 +227,7 @@ data Test =
     } deriving (Show)
 
 instance FromJSON Test where
-  parseJSON valPtr = do
-    obj <- getObjectFromValue valPtr
+  parseJSON valPtr = withObject valPtr $ \ obj -> do
     int <- obj .: "hello"
     str <- obj .: "world"
     ints <- obj .: "list"
@@ -284,7 +291,5 @@ listParser f v = undefined
 decode :: FromJSON a => ByteString -> IO a
 decode input = do
   parser <- mkSIMDParser
-  withForeignPtr parser $ \parserPtr -> do
-    docPtr <- getDocument parserPtr input
-    valPtr <- getDocumentValue docPtr
-    parseJSON valPtr
+  withForeignPtr parser $ \parserPtr ->
+    withDocumentValue parserPtr input parseJSON
