@@ -1,6 +1,6 @@
 module Main where
 
-import MyLib
+import Data.SIMDJSON
 
 main :: IO ()
-main = bulkTest 5000
+main = putStrLn "Hello there"
