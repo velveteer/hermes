@@ -3,4 +3,4 @@ module Main where
 import MyLib
 
 main :: IO ()
-main = test
+main = bulkTest 5000

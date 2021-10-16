@@ -2,12 +2,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module MyLib (test) where
+module MyLib (bulkTest, test) where
 
+import Debug.Trace
+
+import Control.Concurrent (threadDelay)
 import Control.Exception (Exception, mask_, throwIO, toException)
-import Control.Monad ((>=>), replicateM)
+import Control.Monad ((>=>), replicateM_)
 import qualified Data.Aeson as Aeson
 import Data.ByteString
+import Data.Foldable (for_)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Traversable (for)
@@ -16,27 +20,34 @@ import Foreign.Ptr
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
+import Foreign.Marshal.Utils
 import Foreign.StablePtr
 import Foreign.Storable
 import Foreign.C.String
 import Foreign.C.Types
 
+bulkTest :: Int -> IO ()
+bulkTest int = for_ [0..int] $ \int -> (print int >> test)
+
+testStr :: ByteString
+testStr = "{\"world\": \"testing stuff\", \"boolField\": true, \"hello\": 2, \"list\": [10,20,30], \"nested\": { \"more\": [3,3,5]}}"
+
 test :: IO ()
 test = do
-  let testStr = "{\"world\": \"testing stuff\", \"hello\": 2, \"list\": [10, 20, 30]}"
-  print testStr
   d <- decode testStr :: IO Test
   print d
 
 aesonTest :: IO ()
 aesonTest = do
-  let testStr = "{\"world\": \"testing stuff\", \"hello\": 2}"
+  let testStr = "{\"world\": \"testing stuff\", \"boolField\": true, \"hello\": 2, \"list\": [10,20,30], \"nested\": { \"more\": [3,3,5]}}"
+  print testStr
   let d = Aeson.decode testStr :: Maybe Test
   print d
 
 -- SIMD Types
 data SIMDParser
 data SIMDDocument
+data PaddedString
 type ErrPtr = Ptr CInt
 
 -- JSON Types
@@ -45,6 +56,7 @@ data JSONObject
 data JSONArray
 data ArrayIter
 
+-- Constructor/destructors
 foreign import ccall unsafe "parser_init" parserInit
   :: IO (Ptr SIMDParser)
 
@@ -57,35 +69,57 @@ foreign import ccall unsafe "make_values_array" makeValuesImpl
 foreign import ccall unsafe "&delete_values_array" deleteValuesImpl
   :: FunPtr (Ptr CSize -> Ptr (Ptr JSONValue) -> IO ())
 
+foreign import ccall unsafe "make_document" makeDocumentImpl
+  :: IO (Ptr SIMDDocument)
+
+foreign import ccall unsafe "&delete_document" deleteDocumentImpl
+  :: FunPtr (Ptr SIMDDocument -> IO ())
+
+foreign import ccall unsafe "make_input" makeInputImpl
+  :: CString -> CSize -> IO (Ptr PaddedString)
+
+foreign import ccall unsafe "&delete_input" deleteInputImpl
+  :: FunPtr (Ptr PaddedString -> IO ())
+
+-- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
-  :: Ptr SIMDParser -> CString -> CInt -> Ptr SIMDDocument -> ErrPtr -> IO ()
+  :: Ptr SIMDParser -> Ptr PaddedString -> Ptr SIMDDocument -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
-  :: Ptr SIMDDocument -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
+  :: Ptr SIMDDocument -> Ptr JSONValue -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
-  :: Ptr JSONValue -> Ptr JSONObject -> ErrPtr -> IO (Ptr JSONObject)
+  :: Ptr JSONValue -> Ptr JSONObject -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
-  :: Ptr JSONValue -> Ptr JSONArray -> Ptr CInt -> ErrPtr -> IO (Ptr JSONArray)
+  :: Ptr JSONValue -> Ptr JSONArray -> Ptr CSize -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_elems" getArrayElemsImpl
   :: Ptr JSONArray -> Ptr (Ptr JSONValue) -> IO ()
 
 foreign import ccall unsafe "find_field_unordered" findFieldUnorderedImpl
-  :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
+  :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO ()
 
+foreign import ccall unsafe "find_field" findFieldImpl
+  :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO ()
+
+-- Helpers
 foreign import ccall unsafe "get_raw_json_str" getRawJSONStringImpl
   :: Ptr SIMDDocument -> Ptr CString -> ErrPtr -> IO ()
 
+foreign import ccall unsafe "get_error_message" getErrorMessageImpl
+  :: ErrPtr -> IO CString
+
+-- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
   :: Ptr JSONValue -> Ptr CInt -> ErrPtr -> IO CInt
 
 foreign import ccall unsafe "get_string" getStringImpl
   :: Ptr JSONValue -> Ptr CString -> ErrPtr -> IO CString
 
-foreign import ccall unsafe "get_error_message" getErrorMessageImpl
-  :: ErrPtr -> IO CString
+foreign import ccall unsafe "get_bool" getBoolImpl
+  :: Ptr JSONValue -> Ptr CBool -> ErrPtr -> IO CBool
+
 
 data SIMDException = SIMDException String
   deriving (Show, Exception)
@@ -133,57 +167,78 @@ handleError errPtr = do
     errStr <- peekCString =<< getErrorMessageImpl errPtr
     throwIO . SIMDException $ errStr
 
-withDocumentValue :: Ptr SIMDParser -> ByteString -> (Ptr JSONValue -> IO a) -> IO a
-withDocumentValue parserPtr bytes action =
-  useAsCStringLen bytes $ \(cstr, len) ->
-    allocaBytes 64 $ \vPtr ->
-    allocaBytes 64 $ \dPtr ->
-    alloca $ \errPtr -> do
-      getIterator parserPtr cstr (toEnum len) dPtr errPtr
-      handleError errPtr
-      getDocumentValueImpl dPtr vPtr errPtr
-      handleError errPtr
-      action vPtr
+withDocument :: Ptr SIMDParser -> Ptr SIMDDocument -> Ptr PaddedString -> (Ptr JSONValue -> IO a) -> IO a
+withDocument parserPtr docPtr inputPtr action =
+  allocaBytes 24 $ \valPtr ->
+  alloca $ \errPtr -> do
+    traceM "getIterator"
+    getIterator parserPtr inputPtr docPtr errPtr
+    handleError errPtr
+    traceM "getDocumentValue"
+    getDocumentValueImpl docPtr valPtr errPtr
+    handleError errPtr
+    action valPtr
 
 withObject :: Ptr JSONValue -> (Ptr JSONObject -> IO a) -> IO a
 withObject valPtr action =
-  allocaBytes 64 $ \oPtr ->
+  allocaBytes 24 $ \oPtr ->
   alloca $ \errPtr -> do
+    traceM "withObject"
     getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     action oPtr
 
+withUnorderedField :: Ptr JSONObject -> String -> (Ptr JSONValue -> IO a) -> IO a
+withUnorderedField objPtr key action =
+  withCString key $ \cstr ->
+  allocaBytes 24 $ \vPtr ->
+  alloca $ \errPtr -> do
+    traceM "withUnorderedField"
+    findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    handleError errPtr
+    action vPtr
+
 withField :: Ptr JSONObject -> String -> (Ptr JSONValue -> IO a) -> IO a
 withField objPtr key action =
   withCString key $ \cstr ->
-  allocaBytes 64 $ \vPtr ->
-  alloca $ \errPtr ->  do
-    findFieldUnorderedImpl objPtr cstr vPtr errPtr
+  allocaBytes 24 $ \vPtr ->
+  alloca $ \errPtr -> do
+    traceM "withField"
+    findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     action vPtr
 
 getInt :: Ptr JSONValue -> IO Int
 getInt valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
+    traceM "getInt"
     getIntImpl valPtr ptr errPtr
     handleError errPtr
     fromEnum <$> peek ptr
 
+getBool :: Ptr JSONValue -> IO Bool
+getBool valPtr =
+  alloca $ \ptr -> alloca $ \errPtr -> do
+    traceM "getBool"
+    getBoolImpl valPtr ptr errPtr
+    handleError errPtr
+    toBool <$> peek ptr
+
 getString :: Ptr JSONValue -> IO String
 getString valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
+    traceM "getString"
     getStringImpl valPtr ptr errPtr
     handleError errPtr
     peekCString =<< peek ptr
 
 mkValues :: Int -> IO (ForeignPtr (Ptr JSONValue))
-mkValues len = mask_ $
-  allocaArray (toEnum len) $ \outPtr -> do
-    ptr <- mallocForeignPtr
-    withForeignPtr ptr $ \lenPtr -> do
-      poke lenPtr (toEnum len)
-      vals <- makeValuesImpl (toEnum len) outPtr
-      newForeignPtrEnv deleteValuesImpl lenPtr vals
+mkValues len = mask_ $ do
+  outPtr <- mallocArray len
+  lenPtr <- new size
+  vals <- makeValuesImpl size outPtr
+  newForeignPtrEnv deleteValuesImpl lenPtr vals
+  where size = toEnum len
 
 withArrayValues :: Ptr JSONArray -> Int -> ([Ptr JSONValue] -> IO a) -> IO a
 withArrayValues arrPtr len action = do
@@ -197,16 +252,20 @@ withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
 withArrayElems valPtr =
   alloca $ \lenPtr ->
   alloca $ \errPtr ->
-  allocaBytes 64 $ \arrPtr -> do
-    getArrayFromValueImpl valPtr arrPtr lenPtr errPtr
+  allocaBytes 24 $ \aPtr -> do
+    traceM "withArrayElems"
+    getArrayFromValueImpl valPtr aPtr lenPtr errPtr
     handleError errPtr
     len <- fromEnum <$> peek lenPtr
-    withArrayValues arrPtr len $ \ptrs ->
-      traverse parseJSON ptrs
+    withArrayValues aPtr len $ traverse parseJSON
 
 (.:) :: FromJSON a => Ptr JSONObject -> String -> IO a
 infixl 5 .:
-objPtr .: key = withField objPtr key parseJSON
+objPtr .: key = withUnorderedField objPtr key parseJSON
+
+(.:>) :: FromJSON a => Ptr JSONObject -> String -> IO a
+infixl 5 .:>
+objPtr .:> key = withField objPtr key parseJSON
 
 getRawJSONString :: Ptr SIMDDocument -> IO ByteString
 getRawJSONString docPtr =
@@ -219,33 +278,81 @@ mkSIMDParser = mask_ $ do
   ptr <- parserInit
   newForeignPtr parserDestroy ptr
 
+mkSIMDDocument :: IO (ForeignPtr SIMDDocument)
+mkSIMDDocument = mask_ $ do
+  ptr <- makeDocumentImpl
+  newForeignPtr deleteDocumentImpl ptr
+
+mkInput :: ByteString -> IO (ForeignPtr PaddedString)
+mkInput input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
+  ptr <- makeInputImpl cstr (toEnum len)
+  newForeignPtr deleteInputImpl ptr
+
 data Test =
   Test
     { intField :: Int
     , stringField :: String
     , listIntField :: [Int]
+    , booleanField :: Bool
+    , nested :: Test2
     } deriving (Show)
 
-instance FromJSON Test where
+exampleTest = Test
+  { intField = 0
+  , stringField = ""
+  , listIntField = []
+  , booleanField = True
+  , nested = Test2 []
+  }
+
+data Test2 =
+  Test2
+    { more :: [Int]
+    } deriving (Show)
+
+instance FromJSON Test2 where
   parseJSON valPtr = withObject valPtr $ \ obj -> do
-    int <- obj .: "hello"
-    str <- obj .: "world"
-    ints <- obj .: "list"
+    ints <- obj .: "more"
+    pure Test2
+      { more = ints
+      }
+
+instance FromJSON Test where
+  parseJSON valPtr = withObject valPtr $ \obj -> do
+    -- pure exampleTest
+    str <- obj .:> "world"
+    boolean <- obj .:> "boolField"
+    int <- obj .:> "hello"
+    ints <- obj .:> "list"
+    nested <- obj .:> "nested"
     pure Test
       { intField = int
       , stringField = str
       , listIntField = ints
+      , booleanField = boolean
+      , nested = nested
       }
 
 instance Aeson.FromJSON Test where
   parseJSON = Aeson.withObject "test" $ \obj -> do
-    int <- obj Aeson..: "hello"
     str <- obj Aeson..: "world"
+    boolean <- obj Aeson..: "boolField"
+    int <- obj Aeson..: "hello"
     ints <- obj Aeson..: "list"
+    nested <- obj Aeson..: "nested"
     pure Test
       { intField = int
       , stringField = str
       , listIntField = ints
+      , booleanField = boolean
+      , nested = nested
+      }
+
+instance Aeson.FromJSON Test2 where
+  parseJSON = Aeson.withObject "test2" $ \obj -> do
+    ints <- obj Aeson..: "more"
+    pure Test2
+      { more = ints
       }
 
 type Value = Ptr JSONValue
@@ -260,6 +367,9 @@ instance FromJSON Text where
 
 instance FromJSON Int where
   parseJSON = getInt
+
+instance FromJSON Bool where
+  parseJSON = getBool
 
 instance FromJSON Char where
   parseJSON = getString >=> parseChar
@@ -289,7 +399,11 @@ listParser f v = undefined
 {-# INLINE listParser #-}
 
 decode :: FromJSON a => ByteString -> IO a
-decode input = do
+decode bs = do
   parser <- mkSIMDParser
+  document <- mkSIMDDocument
+  input <- mkInput bs
   withForeignPtr parser $ \parserPtr ->
-    withDocumentValue parserPtr input parseJSON
+    withForeignPtr document $ \docPtr ->
+      withForeignPtr input $ \inputPtr ->
+        withDocument parserPtr docPtr inputPtr parseJSON
