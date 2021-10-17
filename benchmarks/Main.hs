@@ -19,23 +19,38 @@ main :: IO ()
 main = do
   input      <- BS.readFile "benchmarks/test.json"
   oooInput   <- BS.readFile "benchmarks/test_ooo.json"
+  arrInput   <- BS.readFile "benchmarks/test_array.json"
   pPtr       <- mkSIMDParser
   dPtr       <- mkSIMDDocument
   pStrPtr    <- mkSIMDPaddedStr input
   pStrPtrOOO <- mkSIMDPaddedStr oooInput
+  pStrPtrArr <- mkSIMDPaddedStr arrInput
   defaultMain
-    [ bgroup "Decode Ordered Keys"
-      [ bench "SIMD Decode" $
-          nfIO (decodeWith pPtr dPtr pStrPtr :: IO Test)
-      , bench "Aeson Decode" $
+    [ bgroup "Partial Decode Ordered Keys"
+      [ bench "Aeson Decode Lazy" $
           nf (Aeson.decode :: BSL.ByteString -> Maybe Test) (BSL.fromStrict input)
+      , bench "Aeson Decode Strict" $
+          nf (Aeson.decode' :: BSL.ByteString -> Maybe Test) (BSL.fromStrict input)
+      , bench "SIMD Decode" $
+          nfIO (decodeWith pPtr dPtr pStrPtr :: IO Test)
       ]
 
-    , bgroup "Decode Out-of-Order Keys"
-      [ bench "SIMD Decode" $
+    , bgroup "Partial Decode Out-of-Order Keys"
+      [ bench "Aeson Decode Lazy" $
+          nf (Aeson.decode :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict oooInput)
+      , bench "Aeson Decode Strict" $
+          nf (Aeson.decode' :: BSL.ByteString -> Maybe Test) (BSL.fromStrict oooInput)
+      , bench "SIMD Decode" $
           nfIO (decodeWith pPtr dPtr pStrPtrOOO :: IO TestOOO)
-      , bench "Aeson Decode" $
-         nf (Aeson.decode :: BSL.ByteString -> Maybe Test) (BSL.fromStrict oooInput)
+      ]
+
+    , bgroup "Full Decode Array of Objects"
+      [ bench "Aeson Decode Lazy" $
+          nf (Aeson.decode :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict arrInput)
+      , bench "Aeson Decode Strict" $
+          nf (Aeson.decode' :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict arrInput)
+      , bench "SIMD Decode" $
+          nfIO (decodeWith pPtr dPtr pStrPtrArr :: IO [Test])
       ]
     ]
 

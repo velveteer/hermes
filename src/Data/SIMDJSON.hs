@@ -14,11 +14,11 @@ module Data.SIMDJSON
   , FromJSON(..)
   ) where
 
--- import           Debug.Trace
+import           Debug.Trace
 
 import           Control.Concurrent    (threadDelay)
 import           Control.Exception     (Exception, mask_, throwIO, toException)
-import           Control.Monad         (replicateM_, (>=>))
+import           Control.Monad         (foldM, (>=>))
 import qualified Data.Aeson            as Aeson
 import           Data.ByteString
 import           Data.Foldable         (for_)
@@ -46,6 +46,7 @@ type ErrPtr = Ptr CInt
 data JSONValue
 data JSONObject
 data JSONArray
+data JSONArrayIter
 
 -- Constructor/destructors
 foreign import ccall unsafe "parser_init" parserInit
@@ -85,8 +86,23 @@ foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
   :: Ptr JSONValue -> Ptr JSONArray -> Ptr CSize -> ErrPtr -> IO ()
 
+foreign import ccall unsafe "get_array_iter" getArrayIterImpl
+  :: Ptr JSONValue -> Ptr JSONArrayIter -> ErrPtr -> IO CBool
+
+foreign import ccall unsafe "arr_iter_is_done" arrayIterIsDoneImpl
+  :: Ptr JSONArrayIter -> IO CBool
+
+foreign import ccall unsafe "arr_iter_get_current" arrayIterGetCurrentImpl
+  :: Ptr JSONArrayIter -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
+
+foreign import ccall unsafe "arr_iter_move_next" arrayIterMoveNextImpl
+  :: Ptr JSONArrayIter -> IO ()
+
 foreign import ccall unsafe "get_array_elems" getArrayElemsImpl
   :: Ptr JSONArray -> Ptr (Ptr JSONValue) -> IO ()
+
+foreign import ccall unsafe "array_at" arrayAtImpl
+  :: Ptr JSONArray -> CSize -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
 
 foreign import ccall unsafe "find_field_unordered" findFieldUnorderedImpl
   :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO ()
@@ -188,7 +204,7 @@ withUnorderedField objPtr key action =
   withCString key $ \cstr ->
   allocaBytes 24 $ \vPtr ->
   alloca $ \errPtr -> do
-    -- traceM "withUnorderedField"
+    -- traceM $ "withUnorderedField " <> key
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     action vPtr
@@ -198,7 +214,7 @@ withField objPtr key action =
   withCString key $ \cstr ->
   allocaBytes 24 $ \vPtr ->
   alloca $ \errPtr -> do
-    -- traceM "withField"
+    -- traceM $ "withField " <> key
     findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     action vPtr
@@ -227,32 +243,33 @@ getString valPtr =
     handleError errPtr
     peekCString =<< peek ptr
 
-mkValues :: Int -> IO (ForeignPtr (Ptr JSONValue))
-mkValues len = mask_ $ do
-  outPtr <- mallocArray len
-  lenPtr <- new size
-  vals <- makeValuesImpl size outPtr
-  newForeignPtrEnv deleteValuesImpl lenPtr vals
-  where size = toEnum len
-
-withArrayValues :: Ptr JSONArray -> Int -> ([Ptr JSONValue] -> IO a) -> IO a
-withArrayValues arrPtr len action = do
-  cells <- mkValues len
-  withForeignPtr cells $ \outPtr -> do
-    getArrayElemsImpl arrPtr outPtr
-    ptrs <- peekArray len outPtr
-    action ptrs
-
 withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
 withArrayElems valPtr =
-  alloca $ \lenPtr ->
   alloca $ \errPtr ->
-  allocaBytes 24 $ \aPtr -> do
+  allocaBytes 24 $ \iterPtr -> do
     -- traceM "withArrayElems"
-    getArrayFromValueImpl valPtr aPtr lenPtr errPtr
+    getArrayIterImpl valPtr iterPtr errPtr
     handleError errPtr
-    len <- fromEnum <$> peek lenPtr
-    withArrayValues aPtr len $ traverse parseJSON
+    iterateOverArray iterPtr parseJSON
+
+iterateOverArray :: Ptr JSONArrayIter -> (Ptr JSONValue -> IO a) -> IO [a]
+iterateOverArray iterPtr action = go []
+  where
+    go acc = do
+      -- traceM "arrIterIsDone"
+      isOver <- arrayIterIsDoneImpl iterPtr
+      if not $ toBool isOver
+        then
+          alloca $ \errPtr ->
+          allocaBytes 24 $ \valPtr -> do
+            -- traceM "arrayIterGetNext"
+            val <- arrayIterGetCurrentImpl iterPtr valPtr errPtr
+            handleError errPtr
+            result <- action val
+            arrayIterMoveNextImpl iterPtr
+            go (result:acc)
+        else
+          pure $ Prelude.reverse acc
 
 (.:) :: FromJSON a => Ptr JSONObject -> String -> IO a
 infixl 5 .:

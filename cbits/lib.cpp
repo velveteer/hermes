@@ -57,7 +57,7 @@ extern "C" {
       ondemand::value &valPtr, 
       ondemand::object &out, 
       error_code &error) {
-    valPtr.get_object().tie(out, error);
+      valPtr.get_object().tie(out, error);
   }
 
   void get_array_from_value(
@@ -69,11 +69,43 @@ extern "C" {
     *len = out.count_elements();
   }
 
-  void get_array_elems(ondemand::array &arrPtr, ondemand::value **out) {
-    size_t index = 0;
-    for (ondemand::value elem : arrPtr) { 
-      *out[index++] = elem;
-    }
+  bool get_array_iter(
+      ondemand::value &valPtr, 
+      ondemand::array_iterator &iterOut, 
+      error_code &error) {
+    ondemand::array arr;
+    auto err = valPtr.get_array().get(arr);
+    if (err != SUCCESS) { error = err; return false; } 
+    arr.begin().tie(iterOut, error);
+    return true;
+  }
+
+  bool arr_iter_is_done(ondemand::array_iterator &arr) {
+    return arr.operator==(arr);
+  }
+
+  ondemand::value *arr_iter_get_current(
+      ondemand::array_iterator &arr, 
+      ondemand::value &out, 
+      error_code &error) {
+    arr.operator*().tie(out, error);
+    return &out;
+  }
+
+  void arr_iter_move_next(
+      ondemand::array_iterator &arr, 
+      ondemand::value &out, 
+      error_code &error) {
+    ++arr;
+  }
+
+  ondemand::value *array_at(
+      ondemand::array &arr, 
+      size_t idx, 
+      ondemand::value &out, 
+      error_code &error) {
+    arr.at(idx).tie(out, error);
+    return &out;
   }
 
   void find_field(
@@ -106,19 +138,16 @@ extern "C" {
     *out = std::string{buf}.c_str();
   }
 
-  ondemand::value **make_values_array(size_t len, ondemand::value **out) {
-    for (size_t i = 0; i < len; ++i) {
-      out[i] = new ondemand::value();
-    }
-    return out;
+  ondemand::json_type get_json_type(ondemand::value &valPtr) {
+    return valPtr.type();
   }
 
-  void delete_values_array(size_t *len, ondemand::value **vals) {
-    for (size_t i = 0; i < *len; ++i) {
-      delete vals[i];
-    }
-    delete vals;
-    free(len);
+  void reset_array(ondemand::array &arrPtr) {
+    arrPtr.reset();
+  }
+
+  void reset_object(ondemand::object &objPtr) {
+    objPtr.reset();
   }
 
 }

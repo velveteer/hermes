@@ -1,0 +1,2 @@
+#! /bin/bash
+exec cabal bench --benchmark-options '+RTS -T'
