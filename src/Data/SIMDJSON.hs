@@ -12,6 +12,9 @@ module Data.SIMDJSON
   , (.:)
   , (.:>)
   , FromJSON(..)
+  , SIMDParser
+  , SIMDDocument
+  , PaddedString
   ) where
 
 import           Debug.Trace
@@ -25,6 +28,7 @@ import           Data.Foldable         (for_)
 import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
 import qualified Data.Text             as T
+import qualified Data.Text.Foreign     as T
 import           Data.Traversable      (for)
 import           Foreign.C.String
 import           Foreign.C.Types
@@ -35,6 +39,7 @@ import           Foreign.Marshal.Utils
 import           Foreign.Ptr
 import           Foreign.StablePtr
 import           Foreign.Storable
+import           GHC.Float (double2Float)
 
 -- SIMD Types
 data SIMDParser
@@ -117,12 +122,18 @@ foreign import ccall unsafe "get_raw_json_str" getRawJSONStringImpl
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: ErrPtr -> IO CString
 
+foreign import ccall unsafe "is_null" isNullImpl
+  :: Ptr JSONValue -> IO CBool
+
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
   :: Ptr JSONValue -> Ptr CInt -> ErrPtr -> IO CInt
 
+foreign import ccall unsafe "get_double" getDoubleImpl
+  :: Ptr JSONValue -> Ptr CDouble -> ErrPtr -> IO CDouble
+
 foreign import ccall unsafe "get_string" getStringImpl
-  :: Ptr JSONValue -> Ptr CString -> ErrPtr -> IO CString
+  :: Ptr JSONValue -> Ptr CString -> Ptr CInt -> ErrPtr -> IO CString
 
 foreign import ccall unsafe "get_bool" getBoolImpl
   :: Ptr JSONValue -> Ptr CBool -> ErrPtr -> IO CBool
@@ -227,6 +238,14 @@ getInt valPtr =
     handleError errPtr
     fromEnum <$> peek ptr
 
+getDouble :: Ptr JSONValue -> IO Double
+getDouble valPtr =
+  alloca $ \ptr -> alloca $ \errPtr -> do
+    -- traceM "getDouble"
+    getDoubleImpl valPtr ptr errPtr
+    handleError errPtr
+    realToFrac <$> peek ptr
+
 getBool :: Ptr JSONValue -> IO Bool
 getBool valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
@@ -236,12 +255,35 @@ getBool valPtr =
     toBool <$> peek ptr
 
 getString :: Ptr JSONValue -> IO String
-getString valPtr =
-  alloca $ \ptr -> alloca $ \errPtr -> do
-    -- traceM "getString"
-    getStringImpl valPtr ptr errPtr
-    handleError errPtr
-    peekCString =<< peek ptr
+getString valPtr = do
+  strPtr <- malloc
+  alloca $ \lenPtr ->
+    alloca $ \errPtr -> mask_ $ do
+      -- traceM "getString"
+      getStringImpl valPtr strPtr lenPtr errPtr
+      handleError errPtr
+      len <- fromEnum <$> peek lenPtr
+      str <- peek strPtr
+      result <- peekCStringLen (str, len)
+      free strPtr
+      pure result
+
+getText :: Ptr JSONValue -> IO Text
+getText valPtr = do
+  strPtr <- malloc
+  alloca $ \lenPtr ->
+    alloca $ \errPtr -> mask_ $ do
+      -- traceM "getText"
+      getStringImpl valPtr strPtr lenPtr errPtr
+      handleError errPtr
+      len <- fromEnum <$> peek lenPtr
+      str <- peek strPtr
+      txt <- T.peekCStringLen (str, len)
+      free strPtr
+      pure txt
+
+isNull :: Ptr JSONValue -> IO Bool
+isNull valPtr = toBool <$> isNullImpl valPtr
 
 withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
 withArrayElems valPtr =
@@ -262,10 +304,11 @@ iterateOverArray iterPtr action = go []
         then
           alloca $ \errPtr ->
           allocaBytes 24 $ \valPtr -> do
-            -- traceM "arrayIterGetNext"
+            -- traceM "arrayIterGetCurrent"
             val <- arrayIterGetCurrentImpl iterPtr valPtr errPtr
             handleError errPtr
             result <- action val
+            -- traceM "arrayIterMoveNext"
             arrayIterMoveNextImpl iterPtr
             go (result:acc)
         else
@@ -308,10 +351,16 @@ class FromJSON a where
   parseJSONList = withArrayElems
 
 instance FromJSON Text where
-  parseJSON = fmap T.pack . getString
+  parseJSON = getText
 
 instance FromJSON Int where
   parseJSON = getInt
+
+instance FromJSON Float where
+  parseJSON = fmap double2Float . getDouble
+
+instance FromJSON Double where
+  parseJSON = getDouble
 
 instance FromJSON Bool where
   parseJSON = getBool
@@ -334,6 +383,16 @@ class FromJSON1 f where
 
 instance FromJSON1 [] where
   liftParseJSON _ p = p
+
+instance FromJSON1 Maybe where
+  liftParseJSON p _ a = do
+    nil <- isNull a
+    if nil
+       then pure Nothing
+       else Just <$> p a
+
+instance (FromJSON a) => FromJSON (Maybe a) where
+  parseJSON = parseJSON1
 
 parseJSON1 :: (FromJSON1 f, FromJSON a) => Ptr JSONValue -> IO (f a)
 parseJSON1 = liftParseJSON parseJSON parseJSONList

@@ -50,9 +50,10 @@ benchmark simdjson-bench
     bytestring,
     deepseq,
     simdjson,
-    tasty-bench
+    tasty,
+    tasty-bench,
+    text
   default-language: Haskell2010
-  mixins: tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main)
   if impl(ghc >= 8.10)
     ghc-options:  "-with-rtsopts=-A32m --nonmoving-gc"
   else

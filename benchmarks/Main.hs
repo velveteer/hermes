@@ -1,136 +1,107 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Main where
 
 import           Control.DeepSeq      (NFData)
-import           Criterion.Main
 import qualified Data.Aeson           as Aeson
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as BSL
+import           Data.Text            (Text)
+import           GHC.ForeignPtr       (ForeignPtr)
 import           GHC.Generics         (Generic)
+import           Test.Tasty           (withResource)
+import           Test.Tasty.Bench
 
 import           Data.SIMDJSON
 
+setupSIMD
+  :: IO BS.ByteString
+  -> IO (ForeignPtr SIMDParser, ForeignPtr SIMDDocument, ForeignPtr PaddedString)
+setupSIMD input = do
+  p <- mkSIMDParser
+  d <- mkSIMDDocument
+  i <- mkSIMDPaddedStr =<< input
+  pure (p, d, i)
+
 main :: IO ()
 main = do
-  input      <- BS.readFile "benchmarks/test.json"
-  oooInput   <- BS.readFile "benchmarks/test_ooo.json"
-  arrInput   <- BS.readFile "benchmarks/test_array.json"
-  pPtr       <- mkSIMDParser
-  dPtr       <- mkSIMDDocument
-  pStrPtr    <- mkSIMDPaddedStr input
-  pStrPtrOOO <- mkSIMDPaddedStr oooInput
-  pStrPtrArr <- mkSIMDPaddedStr arrInput
   defaultMain
-    [ bgroup "Partial Decode Ordered Keys"
-      [ bench "Aeson Decode Lazy" $
-          nf (Aeson.decode :: BSL.ByteString -> Maybe Test) (BSL.fromStrict input)
-      , bench "Aeson Decode Strict" $
-          nf (Aeson.decode' :: BSL.ByteString -> Maybe Test) (BSL.fromStrict input)
-      , bench "SIMD Decode" $
-          nfIO (decodeWith pPtr dPtr pStrPtr :: IO Test)
-      ]
-
-    , bgroup "Partial Decode Out-of-Order Keys"
-      [ bench "Aeson Decode Lazy" $
-          nf (Aeson.decode :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict oooInput)
-      , bench "Aeson Decode Strict" $
-          nf (Aeson.decode' :: BSL.ByteString -> Maybe Test) (BSL.fromStrict oooInput)
-      , bench "SIMD Decode" $
-          nfIO (decodeWith pPtr dPtr pStrPtrOOO :: IO TestOOO)
-      ]
-
-    , bgroup "Full Decode Array of Objects"
-      [ bench "Aeson Decode Lazy" $
-          nf (Aeson.decode :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict arrInput)
-      , bench "Aeson Decode Strict" $
-          nf (Aeson.decode' :: BSL.ByteString -> Maybe [Test]) (BSL.fromStrict arrInput)
-      , bench "SIMD Decode" $
-          nfIO (decodeWith pPtr dPtr pStrPtrArr :: IO [Test])
-      ]
+    [ withResource (BS.readFile "benchmarks/persons.json") (const $ pure ()) $ \input ->
+        bgroup "Decode 12MB Array of Objects"
+        [ bench "Aeson Decode Strict" $
+            nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+        , bench "Aeson Decode Lazy" $
+            nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+        , withResource (setupSIMD input) (const $ pure ()) $ \ptrs ->
+          bench "SIMD Decode" $
+            nfIO (do { (p, d, i) <- ptrs; decodeWith p d i :: IO [Person] })
+        ]
     ]
 
-data Test =
-  Test
-    { intField     :: Int
-    , stringField  :: String
-    , listIntField :: [Int]
-    , booleanField :: Bool
-    , nested       :: Test2
-    } deriving (Generic, NFData, Show)
+data Person =
+  Person
+    { _id           :: Text
+    , index         :: Int
+    , guid          :: Text
+    , isActive      :: Bool
+    , balance       :: Text
+    , picture       :: Text
+    , age           :: Int
+    , eyeColor      :: Text
+    , name          :: Text
+    , gender        :: Text
+    , company       :: Text
+    , email         :: Text
+    , phone         :: Text
+    , address       :: Text
+    , about         :: Text
+    , registered    :: Text
+    , latitude      :: Double
+    , longitude     :: Double
+    , tags          :: [Text]
+    , friends       :: [Friend]
+    , greeting      :: Text
+    , favoriteFruit :: Text
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-data Test2 =
-  Test2
-    { more    :: [Int]
-    , another :: String
-    } deriving (Generic, NFData, Show)
+data Friend =
+  Friend
+    { id   :: Int
+    , name :: Text
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-newtype TestOOO = TestOOO Test
-  deriving newtype NFData
+instance FromJSON Friend where
+  parseJSON valPtr = withObject valPtr $ \obj ->
+    Friend
+    <$> obj .:> "id"
+    <*> obj .:> "name"
 
-instance FromJSON Test where
-  parseJSON valPtr = withObject valPtr $ \obj -> do
-    str <- obj .:> "world"
-    boolean <- obj .:> "boolField"
-    int <- obj .:> "hello"
-    ints <- obj .:> "list"
-    nested' <- obj .:> "nested"
-    pure Test
-      { intField = int
-      , stringField = str
-      , listIntField = ints
-      , booleanField = boolean
-      , nested = nested'
-      }
-
-instance FromJSON TestOOO where
-  parseJSON valPtr = withObject valPtr $ \obj -> do
-    str <- obj .: "world"
-    boolean <- obj .: "boolField"
-    int <- obj .: "hello"
-    ints <- obj .: "list"
-    nested' <- obj .: "nested"
-    pure . TestOOO $ Test
-      { intField = int
-      , stringField = str
-      , listIntField = ints
-      , booleanField = boolean
-      , nested = nested'
-      }
-
-instance FromJSON Test2 where
-  parseJSON valPtr = withObject valPtr $ \ obj -> do
-    ints <- obj .:> "more"
-    str <- obj .:> "another"
-    pure Test2
-      { more = ints
-      , another = str
-      }
-
-instance Aeson.FromJSON Test where
-  parseJSON = Aeson.withObject "test" $ \obj -> do
-    str <- obj Aeson..: "world"
-    boolean <- obj Aeson..: "boolField"
-    int <- obj Aeson..: "hello"
-    ints <- obj Aeson..: "list"
-    nested' <- obj Aeson..: "nested"
-    pure Test
-      { intField = int
-      , stringField = str
-      , listIntField = ints
-      , booleanField = boolean
-      , nested = nested'
-      }
-
-instance Aeson.FromJSON Test2 where
-  parseJSON = Aeson.withObject "test2" $ \obj -> do
-    ints <- obj Aeson..: "more"
-    str <- obj Aeson..: "another"
-    pure Test2
-      { more = ints
-      , another = str
-      }
+instance FromJSON Person where
+  parseJSON valPtr = withObject valPtr $ \obj ->
+    Person
+      <$> obj .:> "_id"
+      <*> obj .:> "index"
+      <*> obj .:> "guid"
+      <*> obj .:> "isActive"
+      <*> obj .:> "balance"
+      <*> obj .:> "picture"
+      <*> obj .:> "age"
+      <*> obj .:> "eyeColor"
+      <*> obj .:> "name"
+      <*> obj .:> "gender"
+      <*> obj .:> "company"
+      <*> obj .:> "email"
+      <*> obj .:> "phone"
+      <*> obj .:> "address"
+      <*> obj .:> "about"
+      <*> obj .:> "registered"
+      <*> obj .:> "latitude"
+      <*> obj .:> "longitude"
+      <*> obj .:> "tags"
+      <*> obj .:> "friends"
+      <*> obj .:> "greeting"
+      <*> obj .:> "favoriteFruit"

@@ -128,14 +128,21 @@ extern "C" {
     valPtr.get_int64().tie(out, error);
   }
 
+  void get_double(ondemand::value &valPtr, double &out, error_code &error) {
+    valPtr.get_double().tie(out, error);
+  }
+
   void get_bool(ondemand::value &valPtr, bool &out, error_code &error) {
     valPtr.get_bool().tie(out, error);
   }
 
-  void get_string(ondemand::value &valPtr, const char **out, error_code &error) {
-    std::string_view buf;
-    valPtr.get_string().tie(buf, error);
-    *out = std::string{buf}.c_str();
+  void get_string(
+      ondemand::value &valPtr, 
+      std::string_view &out, 
+      int64_t &len, 
+      error_code &error) {
+    valPtr.get_string().tie(out, error);
+    len = out.length();
   }
 
   ondemand::json_type get_json_type(ondemand::value &valPtr) {
@@ -148,6 +155,10 @@ extern "C" {
 
   void reset_object(ondemand::object &objPtr) {
     objPtr.reset();
+  }
+
+  bool is_null(ondemand::value &valPtr) {
+    return valPtr.is_null();
   }
 
 }
