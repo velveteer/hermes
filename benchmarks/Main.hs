@@ -1,55 +1,56 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE DuplicateRecordFields      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Main where
 
-import           Control.DeepSeq      (NFData)
-import qualified Data.Aeson           as Aeson
-import qualified Data.ByteString      as BS
-import qualified Data.ByteString.Lazy as BSL
-import           Data.Text            (Text)
-import           GHC.ForeignPtr       (ForeignPtr)
-import           GHC.Generics         (Generic)
-import           Test.Tasty           (withResource)
+import           Control.DeepSeq       (NFData)
+import qualified Data.Aeson            as Aeson
+import qualified Data.ByteString       as BS
+import qualified Data.ByteString.Lazy  as BSL
+import           Data.Functor.Identity (Identity)
+import           Data.Text             (Text)
+import           GHC.ForeignPtr        (ForeignPtr)
+import           GHC.Generics          (Generic)
+import           Test.Tasty            (withResource)
 import           Test.Tasty.Bench
 
 import           Data.SIMDJSON
 
-setupSIMD
-  :: IO BS.ByteString
-  -> IO (ForeignPtr SIMDParser, ForeignPtr SIMDDocument, ForeignPtr PaddedString)
-setupSIMD input = do
-  p <- mkSIMDParser
-  d <- mkSIMDDocument
-  i <- mkSIMDPaddedStr =<< input
-  pure (p, d, i)
-
 main :: IO ()
-main = defaultMain [
-  withResource (BS.readFile "benchmarks/persons.json") (const $ pure ()) $ \input ->
-    bgroup "Decode 12MB Array of Objects"
+main = defaultMain
+  [ withResource (BS.readFile "benchmarks/persons.json") (const $ pure ()) $ \input ->
+    bgroup "Full Decode Persons JSON"
     [ bgroup "Ordered Keys"
-      [ withResource (setupSIMD input) (const $ pure ()) $ \ptrs ->
+      [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
         bench "SIMD Decode" $
-          nfIO (do { (p, d, i) <- ptrs; decodeWith p d i :: IO [Person] })
-      , bench "Aeson Decode Strict" $
-          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+          nfIO (do { envIO >>= decodeWith :: IO [Person] })
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+      , bench "Aeson Decode Strict" $
+          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
       ]
     , bgroup "Unordered Keys"
-      [ withResource (setupSIMD input) (const $ pure ()) $ \ptrs ->
+      [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
         bench "SIMD Decode" $
-          nfIO (do { (p, d, i) <- ptrs; decodeWith p d i :: IO [PersonUnordered] })
-      , bench "Aeson Decode Strict" $
-          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [PersonUnordered]))
+          nfIO (do { envIO >>= decodeWith :: IO [PersonUnordered] })
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe [PersonUnordered]))
+      , bench "Aeson Decode Strict" $
+          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [PersonUnordered]))
       ]
+    ]
+  , withResource (BS.readFile "benchmarks/twitter.json") (const $ pure ()) $ \input ->
+    bgroup "Partial Decode Twitter JSON"
+    [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
+      bench "SIMD Decode" $
+        nfIO (do { envIO >>= decodeWith :: IO Twitter })
+    , bench "Aeson Decode Lazy" $
+        nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe Twitter))
+    , bench "Aeson Decode Strict" $
+        nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe Twitter))
     ]
   ]
 
@@ -67,29 +68,29 @@ data Person =
     , gender        :: Text
     , company       :: Text
     , email         :: Text
-    , phone         :: Text
+    , phone         :: Identity Text
     , address       :: Text
     , about         :: Text
     , registered    :: Text
     , latitude      :: Double
     , longitude     :: Double
     , tags          :: [Text]
-    , friends       :: [Friend]
+    , friends       :: Identity [Friend]
     , greeting      :: Maybe Text
     , favoriteFruit :: Text
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    } deriving (Show, Generic, NFData)
 
 data Friend =
   Friend
     { id   :: Int
     , name :: Text
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    } deriving (Show, Generic, NFData)
 
 instance FromJSON Friend where
   parseJSON valPtr = withObject valPtr $ \obj ->
     Friend
-    <$> obj .:> "id"
-    <*> obj .:> "name"
+      <$> obj .:> "id"
+      <*> obj .:> "name"
 
 instance FromJSON Person where
   parseJSON valPtr = withObject valPtr $ \obj ->
@@ -116,6 +117,38 @@ instance FromJSON Person where
       <*> obj .:> "friends"
       <*> obj .:> "greeting"
       <*> obj .:> "favoriteFruit"
+
+instance Aeson.FromJSON Person where
+  parseJSON = Aeson.withObject "Person" $ \obj ->
+    Person
+      <$> obj Aeson..: "_id"
+      <*> obj Aeson..: "index"
+      <*> obj Aeson..: "guid"
+      <*> obj Aeson..: "isActive"
+      <*> obj Aeson..: "balance"
+      <*> obj Aeson..: "picture"
+      <*> obj Aeson..: "age"
+      <*> obj Aeson..: "eyeColor"
+      <*> obj Aeson..: "name"
+      <*> obj Aeson..: "gender"
+      <*> obj Aeson..: "company"
+      <*> obj Aeson..: "email"
+      <*> obj Aeson..: "phone"
+      <*> obj Aeson..: "address"
+      <*> obj Aeson..: "about"
+      <*> obj Aeson..: "registered"
+      <*> obj Aeson..: "latitude"
+      <*> obj Aeson..: "longitude"
+      <*> obj Aeson..: "tags"
+      <*> obj Aeson..: "friends"
+      <*> obj Aeson..: "greeting"
+      <*> obj Aeson..: "favoriteFruit"
+
+instance Aeson.FromJSON Friend where
+  parseJSON = Aeson.withObject "Friend" $ \obj ->
+    Friend
+      <$> obj Aeson..: "id"
+      <*> obj Aeson..: "name"
 
 data PersonUnordered =
   PersonUnordered
@@ -168,3 +201,34 @@ instance FromJSON PersonUnordered where
       <*> obj .: "registered"
       <*> obj .: "tags"
       <*> obj .: "friends"
+
+data Twitter =
+  Twitter
+    { statuses :: [Status]
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+
+data Status =
+  Status
+    { user :: User
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+
+data User =
+  User
+    { screen_name :: Text
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+
+instance FromJSON Twitter where
+  parseJSON val = withObject val $ \obj ->
+    Twitter
+      <$> obj .:> "statuses"
+
+instance FromJSON Status where
+  parseJSON val = withObject val $ \obj -> do
+    Status
+      <$> obj .:> "user"
+
+instance FromJSON User where
+  parseJSON val = withObject val $ \obj -> do
+    User
+      <$> obj .:> "screen_name"
+

@@ -5,13 +5,13 @@
 module Data.SIMDJSON
   ( decode
   , decodeWith
-  , mkSIMDDocument
-  , mkSIMDPaddedStr
-  , mkSIMDParser
+  , mkSIMDJSONEnv
   , withObject
   , (.:)
   , (.:>)
+  , Value
   , FromJSON(..)
+  , SIMDJSONEnv
   , SIMDParser
   , SIMDDocument
   , PaddedString
@@ -25,6 +25,8 @@ import           Control.Monad         (foldM, (>=>))
 import qualified Data.Aeson            as Aeson
 import           Data.ByteString
 import           Data.Foldable         (for_)
+import           Data.Functor.Identity (Identity(..))
+import qualified Data.DList            as DList
 import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
 import qualified Data.Text             as T
@@ -41,13 +43,13 @@ import           Foreign.StablePtr
 import           Foreign.Storable
 import           GHC.Float (double2Float)
 
--- SIMD Types
+-- Opaque SIMD Types
 data SIMDParser
 data SIMDDocument
 data PaddedString
 type ErrPtr = Ptr CInt
 
--- JSON Types
+-- Opaque JSON Types
 data JSONValue
 data JSONObject
 data JSONArray
@@ -59,12 +61,6 @@ foreign import ccall unsafe "parser_init" parserInit
 
 foreign import ccall unsafe "&parser_destroy" parserDestroy
   :: FunPtr (Ptr SIMDParser -> IO ())
-
-foreign import ccall unsafe "make_values_array" makeValuesImpl
-  :: CSize -> Ptr (Ptr JSONValue) -> IO (Ptr (Ptr JSONValue))
-
-foreign import ccall unsafe "&delete_values_array" deleteValuesImpl
-  :: FunPtr (Ptr CSize -> Ptr (Ptr JSONValue) -> IO ())
 
 foreign import ccall unsafe "make_document" makeDocumentImpl
   :: IO (Ptr SIMDDocument)
@@ -80,63 +76,57 @@ foreign import ccall unsafe "&delete_input" deleteInputImpl
 
 -- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
-  :: Ptr SIMDParser -> Ptr PaddedString -> Ptr SIMDDocument -> ErrPtr -> IO ()
+  :: Parser -> InputBuffer -> Document -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
-  :: Ptr SIMDDocument -> Ptr JSONValue -> ErrPtr -> IO ()
+  :: Document -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
-  :: Ptr JSONValue -> Ptr JSONObject -> ErrPtr -> IO ()
+  :: Value -> Object -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
-  :: Ptr JSONValue -> Ptr JSONArray -> Ptr CSize -> ErrPtr -> IO ()
+  :: Value -> Array -> Ptr CSize -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_iter" getArrayIterImpl
-  :: Ptr JSONValue -> Ptr JSONArrayIter -> ErrPtr -> IO CBool
+  :: Value -> ArrayIter -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "arr_iter_is_done" arrayIterIsDoneImpl
-  :: Ptr JSONArrayIter -> IO CBool
+  :: ArrayIter -> IO CBool
 
 foreign import ccall unsafe "arr_iter_get_current" arrayIterGetCurrentImpl
-  :: Ptr JSONArrayIter -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
+  :: ArrayIter -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "arr_iter_move_next" arrayIterMoveNextImpl
-  :: Ptr JSONArrayIter -> IO ()
-
-foreign import ccall unsafe "get_array_elems" getArrayElemsImpl
-  :: Ptr JSONArray -> Ptr (Ptr JSONValue) -> IO ()
-
-foreign import ccall unsafe "array_at" arrayAtImpl
-  :: Ptr JSONArray -> CSize -> Ptr JSONValue -> ErrPtr -> IO (Ptr JSONValue)
+  :: ArrayIter -> IO ()
 
 foreign import ccall unsafe "find_field_unordered" findFieldUnorderedImpl
-  :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO ()
+  :: Object -> CString -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "find_field" findFieldImpl
-  :: Ptr JSONObject -> CString -> Ptr JSONValue -> ErrPtr -> IO ()
+  :: Object -> CString -> Value -> ErrPtr -> IO ()
 
 -- Helpers
 foreign import ccall unsafe "get_raw_json_str" getRawJSONStringImpl
-  :: Ptr SIMDDocument -> Ptr CString -> ErrPtr -> IO ()
+  :: Document -> Ptr CString -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: ErrPtr -> IO CString
 
 foreign import ccall unsafe "is_null" isNullImpl
-  :: Ptr JSONValue -> IO CBool
+  :: Value -> IO CBool
 
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
-  :: Ptr JSONValue -> Ptr CInt -> ErrPtr -> IO CInt
+  :: Value -> Ptr CInt -> ErrPtr -> IO CInt
 
 foreign import ccall unsafe "get_double" getDoubleImpl
-  :: Ptr JSONValue -> Ptr CDouble -> ErrPtr -> IO CDouble
+  :: Value -> Ptr CDouble -> ErrPtr -> IO CDouble
 
 foreign import ccall unsafe "get_string" getStringImpl
-  :: Ptr JSONValue -> Ptr CString -> Ptr CInt -> ErrPtr -> IO CString
+  :: Value -> Ptr CString -> Ptr CInt -> ErrPtr -> IO CString
 
 foreign import ccall unsafe "get_bool" getBoolImpl
-  :: Ptr JSONValue -> Ptr CBool -> ErrPtr -> IO CBool
+  :: Value -> Ptr CBool -> ErrPtr -> IO CBool
 
 data SIMDException = SIMDException String
   deriving (Show, Exception)
@@ -175,6 +165,15 @@ data SIMDErrorCode =
   | NUM_ERROR_CODES
   deriving (Eq, Show, Bounded, Enum)
 
+allocaValue :: (Value -> IO a) -> IO a
+allocaValue f = allocaBytes 24 $ \val -> f (Value val)
+
+allocaObject :: (Object -> IO a) -> IO a
+allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
+
+allocaArrayIter :: (ArrayIter -> IO a) -> IO a
+allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
+
 handleError :: ErrPtr -> IO ()
 handleError errPtr = do
   errCode <- toEnum . fromEnum <$> peek errPtr
@@ -184,14 +183,30 @@ handleError errPtr = do
     errStr <- peekCString =<< getErrorMessageImpl errPtr
     throwIO . SIMDException $ errStr
 
-withDocument
-  :: Ptr SIMDParser
-  -> Ptr SIMDDocument
-  -> Ptr PaddedString
-  -> (Ptr JSONValue -> IO a)
-  -> IO a
+-- | A reference to an opaque simdjson::ondemand::parser.
+newtype Parser = Parser (Ptr SIMDParser)
+
+-- | A reference to an opaque simdjson::ondemand::document.
+newtype Document = Document (Ptr SIMDDocument)
+
+-- | A reference to an opaque simdjson::padded_string.
+newtype InputBuffer = InputBuffer (Ptr PaddedString)
+
+-- | A reference to an opaque simdjson::ondemand::value.
+newtype Value = Value (Ptr JSONValue)
+
+-- | A reference to an opaque simdjson::ondemand::object.
+newtype Object = Object (Ptr JSONObject)
+
+-- | A reference to an opaque simdjson::ondemand::array.
+newtype Array = Array (Ptr JSONArray)
+
+-- | A reference to an opaque simdjson::ondemand::array_iterator.
+newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
+
+withDocument :: Parser -> Document -> InputBuffer -> (Value -> IO a) -> IO a
 withDocument parserPtr docPtr inputPtr action =
-  allocaBytes 24 $ \valPtr ->
+  allocaValue $ \valPtr ->
   alloca $ \errPtr -> do
     -- traceM "getIterator"
     getIterator parserPtr inputPtr docPtr errPtr
@@ -201,36 +216,36 @@ withDocument parserPtr docPtr inputPtr action =
     handleError errPtr
     action valPtr
 
-withObject :: Ptr JSONValue -> (Ptr JSONObject -> IO a) -> IO a
+withObject :: Value -> (Object -> IO a) -> IO a
 withObject valPtr action =
-  allocaBytes 24 $ \oPtr ->
+  allocaObject $ \oPtr ->
   alloca $ \errPtr -> do
     -- traceM "withObject"
     getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     action oPtr
 
-withUnorderedField :: Ptr JSONObject -> String -> (Ptr JSONValue -> IO a) -> IO a
+withUnorderedField :: Object -> String -> (Value -> IO a) -> IO a
 withUnorderedField objPtr key action =
   withCString key $ \cstr ->
-  allocaBytes 24 $ \vPtr ->
+  allocaValue $ \vPtr ->
   alloca $ \errPtr -> do
     -- traceM $ "withUnorderedField " <> key
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     action vPtr
 
-withField :: Ptr JSONObject -> String -> (Ptr JSONValue -> IO a) -> IO a
+withField :: Object -> String -> (Value -> IO a) -> IO a
 withField objPtr key action =
   withCString key $ \cstr ->
-  allocaBytes 24 $ \vPtr ->
+  allocaValue $ \vPtr ->
   alloca $ \errPtr -> do
     -- traceM $ "withField " <> key
     findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     action vPtr
 
-getInt :: Ptr JSONValue -> IO Int
+getInt :: Value -> IO Int
 getInt valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
     -- traceM "getInt"
@@ -238,7 +253,7 @@ getInt valPtr =
     handleError errPtr
     fromEnum <$> peek ptr
 
-getDouble :: Ptr JSONValue -> IO Double
+getDouble :: Value -> IO Double
 getDouble valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
     -- traceM "getDouble"
@@ -246,7 +261,7 @@ getDouble valPtr =
     handleError errPtr
     realToFrac <$> peek ptr
 
-getBool :: Ptr JSONValue -> IO Bool
+getBool :: Value -> IO Bool
 getBool valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
     -- traceM "getBool"
@@ -254,11 +269,11 @@ getBool valPtr =
     handleError errPtr
     toBool <$> peek ptr
 
-getString :: Ptr JSONValue -> IO String
-getString valPtr = do
+getString :: Value -> IO String
+getString valPtr = mask_ $ do
   strPtr <- malloc
   alloca $ \lenPtr ->
-    alloca $ \errPtr -> mask_ $ do
+    alloca $ \errPtr -> do
       -- traceM "getString"
       getStringImpl valPtr strPtr lenPtr errPtr
       handleError errPtr
@@ -268,11 +283,11 @@ getString valPtr = do
       free strPtr
       pure result
 
-getText :: Ptr JSONValue -> IO Text
-getText valPtr = do
+getText :: Value -> IO Text
+getText valPtr = mask_ $ do
   strPtr <- malloc
   alloca $ \lenPtr ->
-    alloca $ \errPtr -> mask_ $ do
+    alloca $ \errPtr -> do
       -- traceM "getText"
       getStringImpl valPtr strPtr lenPtr errPtr
       handleError errPtr
@@ -282,20 +297,20 @@ getText valPtr = do
       free strPtr
       pure txt
 
-isNull :: Ptr JSONValue -> IO Bool
+isNull :: Value -> IO Bool
 isNull valPtr = toBool <$> isNullImpl valPtr
 
-withArrayElems :: FromJSON a => Ptr JSONValue -> IO [a]
+withArrayElems :: FromJSON a => Value -> IO [a]
 withArrayElems valPtr =
   alloca $ \errPtr ->
-  allocaBytes 24 $ \iterPtr -> do
+  allocaArrayIter $ \iterPtr -> do
     -- traceM "withArrayElems"
     getArrayIterImpl valPtr iterPtr errPtr
     handleError errPtr
     iterateOverArray iterPtr parseJSON
 
-iterateOverArray :: Ptr JSONArrayIter -> (Ptr JSONValue -> IO a) -> IO [a]
-iterateOverArray iterPtr action = go []
+iterateOverArray :: ArrayIter -> (Value -> IO a) -> IO [a]
+iterateOverArray iterPtr action = go DList.empty
   where
     go acc = do
       -- traceM "arrIterIsDone"
@@ -303,51 +318,34 @@ iterateOverArray iterPtr action = go []
       if not $ toBool isOver
         then
           alloca $ \errPtr ->
-          allocaBytes 24 $ \valPtr -> do
+          allocaValue $ \valPtr -> do
             -- traceM "arrayIterGetCurrent"
-            val <- arrayIterGetCurrentImpl iterPtr valPtr errPtr
+            arrayIterGetCurrentImpl iterPtr valPtr errPtr
             handleError errPtr
-            result <- action val
+            result <- action valPtr
             -- traceM "arrayIterMoveNext"
             arrayIterMoveNextImpl iterPtr
-            go (result:acc)
+            go (acc <> DList.singleton result)
         else
-          pure $ Prelude.reverse acc
+          pure $ DList.toList acc
 
-(.:) :: FromJSON a => Ptr JSONObject -> String -> IO a
+(.:) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:
 objPtr .: key = withUnorderedField objPtr key parseJSON
 
-(.:>) :: FromJSON a => Ptr JSONObject -> String -> IO a
+(.:>) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:>
 objPtr .:> key = withField objPtr key parseJSON
 
-getRawJSONString :: Ptr SIMDDocument -> IO ByteString
+getRawJSONString :: Document -> IO ByteString
 getRawJSONString docPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
     getRawJSONStringImpl docPtr ptr errPtr
     peek ptr >>= packCString
 
-mkSIMDParser :: IO (ForeignPtr SIMDParser)
-mkSIMDParser = mask_ $ do
-  ptr <- parserInit
-  newForeignPtr parserDestroy ptr
-
-mkSIMDDocument :: IO (ForeignPtr SIMDDocument)
-mkSIMDDocument = mask_ $ do
-  ptr <- makeDocumentImpl
-  newForeignPtr deleteDocumentImpl ptr
-
-mkSIMDPaddedStr :: ByteString -> IO (ForeignPtr PaddedString)
-mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
-  ptr <- makeInputImpl cstr (toEnum len)
-  newForeignPtr deleteInputImpl ptr
-
-type Value = Ptr JSONValue
-
 class FromJSON a where
-  parseJSON :: Ptr JSONValue -> IO a
-  parseJSONList :: Ptr JSONValue -> IO [a]
+  parseJSON :: Value -> IO a
+  parseJSONList :: Value -> IO [a]
   parseJSONList = withArrayElems
 
 instance FromJSON Text where
@@ -394,13 +392,61 @@ instance FromJSON1 Maybe where
 instance (FromJSON a) => FromJSON (Maybe a) where
   parseJSON = parseJSON1
 
-parseJSON1 :: (FromJSON1 f, FromJSON a) => Ptr JSONValue -> IO (f a)
+instance FromJSON1 Identity where
+  liftParseJSON p _ a = Identity <$> p a
+  liftParseJSONList _ p a = fmap Identity <$> p a
+
+instance (FromJSON a) => FromJSON (Identity a) where
+  parseJSON = parseJSON1
+  parseJSONList = liftParseJSONList parseJSON parseJSONList
+
+parseJSON1 :: (FromJSON1 f, FromJSON a) => Value -> IO (f a)
 parseJSON1 = liftParseJSON parseJSON parseJSONList
 {-# INLINE parseJSON1 #-}
 
 listParser :: (Value -> IO a) -> Value -> IO [a]
-listParser f v = undefined
+listParser f valPtr =
+  alloca $ \errPtr ->
+  allocaArrayIter $ \iterPtr -> do
+    getArrayIterImpl valPtr iterPtr errPtr
+    handleError errPtr
+    iterateOverArray iterPtr f
 {-# INLINE listParser #-}
+
+-- Decoding
+
+data SIMDJSONEnv =
+  SIMDJSONEnv
+    { simdParser :: ForeignPtr SIMDParser
+    , simdDoc    :: ForeignPtr SIMDDocument
+    , simdInput  :: ForeignPtr PaddedString
+    }
+
+mkSIMDJSONEnv :: ByteString -> IO SIMDJSONEnv
+mkSIMDJSONEnv bytes = do
+  parser   <- mkSIMDParser
+  document <- mkSIMDDocument
+  input    <- mkSIMDPaddedStr bytes
+  pure SIMDJSONEnv
+    { simdParser = parser
+    , simdDoc = document
+    , simdInput = input
+    }
+
+mkSIMDParser :: IO (ForeignPtr SIMDParser)
+mkSIMDParser = mask_ $ do
+  ptr <- parserInit
+  newForeignPtr parserDestroy ptr
+
+mkSIMDDocument :: IO (ForeignPtr SIMDDocument)
+mkSIMDDocument = mask_ $ do
+  ptr <- makeDocumentImpl
+  newForeignPtr deleteDocumentImpl ptr
+
+mkSIMDPaddedStr :: ByteString -> IO (ForeignPtr PaddedString)
+mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
+  ptr <- makeInputImpl cstr (toEnum len)
+  newForeignPtr deleteInputImpl ptr
 
 decode
   :: FromJSON a
@@ -413,16 +459,11 @@ decode bs = do
   withForeignPtr parser $ \parserPtr ->
     withForeignPtr document $ \docPtr ->
       withForeignPtr input $ \inputPtr ->
-        withDocument parserPtr docPtr inputPtr parseJSON
+        withDocument (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr) parseJSON
 
-decodeWith
-  :: FromJSON a
-  => ForeignPtr SIMDParser
-  -> ForeignPtr SIMDDocument
-  -> ForeignPtr PaddedString
-  -> IO a
-decodeWith parser document input =
-  withForeignPtr parser $ \parserPtr ->
-  withForeignPtr document $ \docPtr ->
-  withForeignPtr input $ \inputPtr ->
-  withDocument parserPtr docPtr inputPtr parseJSON
+decodeWith :: FromJSON a => SIMDJSONEnv -> IO a
+decodeWith env =
+  withForeignPtr (simdParser env) $ \parserPtr ->
+  withForeignPtr (simdDoc env) $ \docPtr ->
+  withForeignPtr (simdInput env) $ \inputPtr ->
+  withDocument (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr) parseJSON

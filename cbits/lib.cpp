@@ -40,41 +40,41 @@ extern "C" {
   }
 
   void get_raw_json_str(
-      ondemand::document &docPtr, 
+      ondemand::document &doc, 
       std::string_view &out, 
       error_code &error) {
-    docPtr.raw_json().tie(out, error);
+    doc.raw_json().tie(out, error);
   }
 
   void get_document_value(
-      ondemand::document &docPtr, 
+      ondemand::document &doc, 
       ondemand::value &out, 
       error_code &error) {
-    docPtr.get_value().tie(out, error);
+    doc.get_value().tie(out, error);
   }
 
   void get_object_from_value(
-      ondemand::value &valPtr, 
+      ondemand::value &val, 
       ondemand::object &out, 
       error_code &error) {
-      valPtr.get_object().tie(out, error);
+      val.get_object().tie(out, error);
   }
 
   void get_array_from_value(
-      ondemand::value &valPtr, 
+      ondemand::value &val, 
       ondemand::array &out, 
       size_t *len, 
       error_code &error) {
-    valPtr.get_array().tie(out, error);
+    val.get_array().tie(out, error);
     *len = out.count_elements();
   }
 
   bool get_array_iter(
-      ondemand::value &valPtr, 
+      ondemand::value &val, 
       ondemand::array_iterator &iterOut, 
       error_code &error) {
     ondemand::array arr;
-    auto err = valPtr.get_array().get(arr);
+    auto err = val.get_array().get(arr);
     if (err != SUCCESS) { error = err; return false; } 
     arr.begin().tie(iterOut, error);
     return true;
@@ -99,66 +99,57 @@ extern "C" {
     ++arr;
   }
 
-  ondemand::value *array_at(
-      ondemand::array &arr, 
-      size_t idx, 
-      ondemand::value &out, 
-      error_code &error) {
-    arr.at(idx).tie(out, error);
-    return &out;
-  }
-
   void find_field(
-      ondemand::object &objPtr, 
+      ondemand::object &obj, 
       char *key, 
       ondemand::value &out, 
       error_code &error) {
-    objPtr.find_field(key).tie(out, error);
+    obj.find_field(key).tie(out, error);
   }
 
   void find_field_unordered(
-      ondemand::object &objPtr, 
+      ondemand::object &obj, 
       char *key, 
       ondemand::value &out, 
       error_code &error) {
-    objPtr.find_field_unordered(key).tie(out, error);
+    obj.find_field_unordered(key).tie(out, error);
   }
 
-  void get_int(ondemand::value &valPtr, int64_t &out, error_code &error) {
-    valPtr.get_int64().tie(out, error);
+  void get_int(ondemand::value &val, int64_t &out, error_code &error) {
+    val.get_int64().tie(out, error);
   }
 
-  void get_double(ondemand::value &valPtr, double &out, error_code &error) {
-    valPtr.get_double().tie(out, error);
+  void get_double(ondemand::value &val, double &out, error_code &error) {
+    val.get_double().tie(out, error);
   }
 
-  void get_bool(ondemand::value &valPtr, bool &out, error_code &error) {
-    valPtr.get_bool().tie(out, error);
+  void get_bool(ondemand::value &val, bool &out, error_code &error) {
+    val.get_bool().tie(out, error);
   }
 
   void get_string(
-      ondemand::value &valPtr, 
+      ondemand::value &val, 
       std::string_view &out, 
       int64_t &len, 
       error_code &error) {
-    valPtr.get_string().tie(out, error);
+    val.get_string().tie(out, error);
     len = out.length();
   }
 
-  ondemand::json_type get_json_type(ondemand::value &valPtr) {
-    return valPtr.type();
+  ondemand::json_type get_json_type(ondemand::value &val) {
+    return val.type();
   }
 
-  void reset_array(ondemand::array &arrPtr) {
-    arrPtr.reset();
+  void reset_array(ondemand::array &arr) {
+    arr.reset();
   }
 
-  void reset_object(ondemand::object &objPtr) {
-    objPtr.reset();
+  void reset_object(ondemand::object &obj) {
+    obj.reset();
   }
 
-  bool is_null(ondemand::value &valPtr) {
-    return valPtr.is_null();
+  bool is_null(ondemand::value &val) {
+    return val.is_null();
   }
 
 }
