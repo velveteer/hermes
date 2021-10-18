@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Data.SIMDJSON
@@ -8,6 +9,7 @@ module Data.SIMDJSON
   , mkSIMDJSONEnv
   , withObject
   , (.:)
+  , (.:?)
   , (.:>)
   , Value
   , FromJSON(..)
@@ -235,6 +237,18 @@ withUnorderedField objPtr key action =
     handleError errPtr
     action vPtr
 
+withUnorderedOptionalField :: Object -> String -> (Value -> IO a) -> IO (Maybe a)
+withUnorderedOptionalField objPtr key action =
+  withCString key $ \cstr ->
+  allocaValue $ \vPtr ->
+  alloca $ \errPtr -> do
+    -- traceM $ "withUnorderedOptionalField " <> key
+    findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    errCode <- toEnum . fromEnum <$> peek errPtr
+    if | errCode == SUCCESS -> Just <$> action vPtr
+       | errCode == NO_SUCH_FIELD -> pure Nothing
+       | otherwise -> Nothing <$ handleError errPtr
+
 withField :: Object -> String -> (Value -> IO a) -> IO a
 withField objPtr key action =
   withCString key $ \cstr ->
@@ -332,6 +346,10 @@ iterateOverArray iterPtr action = go DList.empty
 (.:) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:
 objPtr .: key = withUnorderedField objPtr key parseJSON
+
+(.:?) :: FromJSON a => Object -> String -> IO (Maybe a)
+infixl 5 .:?
+objPtr .:? key = withUnorderedOptionalField objPtr key parseJSON
 
 (.:>) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:>

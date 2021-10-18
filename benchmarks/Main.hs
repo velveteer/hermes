@@ -164,6 +164,7 @@ data PersonUnordered =
     , guid          :: Text
     , name          :: Text
     , greeting      :: Text
+    , nonexistent   :: Maybe Text
     , company       :: Text
     , picture       :: Text
     , phone         :: Text
@@ -191,6 +192,7 @@ instance FromJSON PersonUnordered where
       <*> obj .: "guid"
       <*> obj .: "name"
       <*> obj .: "greeting"
+      <*> obj .:? "nonexistent"
       <*> obj .: "company"
       <*> obj .: "picture"
       <*> obj .: "phone"
