@@ -28,18 +28,18 @@ main = defaultMain
         bench "SIMD Decode" $
           nfIO (do { envIO >>= decodeWith :: IO [Person] })
       , bench "Aeson Decode Lazy" $
-          nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+          nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Decode Strict" $
-          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [Person]))
+          nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [Person]))
       ]
     , bgroup "Unordered Keys"
       [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
         bench "SIMD Decode" $
           nfIO (do { envIO >>= decodeWith :: IO [PersonUnordered] })
       , bench "Aeson Decode Lazy" $
-          nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe [PersonUnordered]))
+          nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Decode Strict" $
-          nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe [PersonUnordered]))
+          nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [PersonUnordered]))
       ]
     ]
   , withResource (BS.readFile "benchmarks/twitter.json") (const $ pure ()) $ \input ->
@@ -48,9 +48,9 @@ main = defaultMain
       bench "SIMD Decode" $
         nfIO (do { envIO >>= decodeWith :: IO Twitter })
     , bench "Aeson Decode Lazy" $
-        nfIO ((Aeson.decode . BSL.fromStrict <$> input) :: IO (Maybe Twitter))
+        nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Decode Strict" $
-        nfIO ((Aeson.decode' . BSL.fromStrict <$> input) :: IO (Maybe Twitter))
+        nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe Twitter))
     ]
   ]
 
@@ -217,6 +217,9 @@ data Status =
 data User =
   User
     { screen_name :: Text
+    , location    :: Text
+    , description :: Text
+    , url         :: Maybe Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
 instance FromJSON Twitter where
@@ -233,4 +236,7 @@ instance FromJSON User where
   parseJSON val = withObject val $ \obj -> do
     User
       <$> obj .:> "screen_name"
+      <*> obj .:> "location"
+      <*> obj .:> "description"
+      <*> obj .:> "url"
 
