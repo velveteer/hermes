@@ -29,3 +29,10 @@ The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of ob
 
 * Decode to `Text` instead of `String` wherever possible!
 * You can improve performance by holding onto your own `SIMDJSONEnv` and using `decodeWith` instead of `decode`. This ensures the simdjson instances are allocated by the caller who can hold a reference to them, which prevents the garbage collector from running their finalizers. `decode` creates and destroys the simdjson instances every time it runs, which adds a performance penalty.
+
+## Limitations
+
+Since this is based on an iterator that uses a global cursor, you must be mindful to not access values out of order.
+The library tries to avoid letting you do this by not defining `FromJSON` instances for opaque types like `Value`, `Object` or `Array`. In other words, you cannot hold onto a `Value` in order to parse it later; you must parse values as you encounter them.
+
+It would be possible to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 

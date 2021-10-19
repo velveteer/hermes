@@ -6,42 +6,37 @@
 module Data.SIMDJSON
   ( decode
   , decodeWith
+  , getRawJSONString
   , mkSIMDJSONEnv
   , withObject
+  , FromJSON(..)
   , (.:)
   , (.:?)
   , (.:>)
   , Value
-  , FromJSON(..)
+  , Object
+  , ArrayIter
   , SIMDJSONEnv
   , SIMDParser
   , SIMDDocument
   , PaddedString
   ) where
 
-import           Debug.Trace
+-- import           Debug.Trace
 
-import           Control.Concurrent    (threadDelay)
-import           Control.Exception     (Exception, mask_, throwIO, toException)
-import           Control.Monad         (foldM, (>=>))
-import qualified Data.Aeson            as Aeson
+import           Control.Exception     (Exception, mask_, throwIO)
+import           Control.Monad         ((>=>))
 import           Data.ByteString
 import qualified Data.DList            as DList
-import           Data.Foldable         (for_)
 import           Data.Functor.Identity (Identity (..))
-import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
-import qualified Data.Text             as T
 import qualified Data.Text.Foreign     as T
-import           Data.Traversable      (for)
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.ForeignPtr
 import           Foreign.Marshal.Alloc
-import           Foreign.Marshal.Array
 import           Foreign.Marshal.Utils
 import           Foreign.Ptr
-import           Foreign.StablePtr
 import           Foreign.Storable
 import           GHC.Float             (double2Float)
 
@@ -54,7 +49,6 @@ type ErrPtr = Ptr CInt
 -- Opaque JSON Types
 data JSONValue
 data JSONObject
-data JSONArray
 data JSONArrayIter
 
 -- Constructor/destructors
@@ -86,8 +80,8 @@ foreign import ccall unsafe "get_document_value" getDocumentValueImpl
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
   :: Value -> Object -> ErrPtr -> IO ()
 
-foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
-  :: Value -> Array -> Ptr CSize -> ErrPtr -> IO ()
+-- foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
+--   :: Value -> Array -> Ptr CSize -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_iter" getArrayIterImpl
   :: Value -> ArrayIter -> ErrPtr -> IO ()
@@ -119,16 +113,16 @@ foreign import ccall unsafe "is_null" isNullImpl
 
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
-  :: Value -> Ptr CInt -> ErrPtr -> IO CInt
+  :: Value -> Ptr CInt -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_double" getDoubleImpl
-  :: Value -> Ptr CDouble -> ErrPtr -> IO CDouble
+  :: Value -> Ptr CDouble -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_string" getStringImpl
-  :: Value -> Ptr CString -> Ptr CInt -> ErrPtr -> IO CString
+  :: Value -> Ptr CString -> Ptr CInt -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_bool" getBoolImpl
-  :: Value -> Ptr CBool -> ErrPtr -> IO CBool
+  :: Value -> Ptr CBool -> ErrPtr -> IO ()
 
 data SIMDException = SIMDException String
   deriving (Show, Exception)
@@ -200,9 +194,6 @@ newtype Value = Value (Ptr JSONValue)
 -- | A reference to an opaque simdjson::ondemand::object.
 newtype Object = Object (Ptr JSONObject)
 
--- | A reference to an opaque simdjson::ondemand::array.
-newtype Array = Array (Ptr JSONArray)
-
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 
@@ -218,14 +209,14 @@ withDocument parserPtr docPtr inputPtr action =
     handleError errPtr
     action valPtr
 
-withObject :: Value -> (Object -> IO a) -> IO a
-withObject valPtr action =
+withObject :: (Object -> IO a) -> Value -> IO a
+withObject f valPtr =
   allocaObject $ \oPtr ->
   alloca $ \errPtr -> do
     -- traceM "withObject"
     getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
-    action oPtr
+    f oPtr
 
 withUnorderedField :: Object -> String -> (Value -> IO a) -> IO a
 withUnorderedField objPtr key action =

@@ -11,7 +11,6 @@ import qualified Data.Aeson            as Aeson
 import qualified Data.ByteString       as BS
 import           Data.Functor.Identity (Identity)
 import           Data.Text             (Text)
-import           GHC.ForeignPtr        (ForeignPtr)
 import           GHC.Generics          (Generic)
 import           Test.Tasty            (withResource)
 import           Test.Tasty.Bench
@@ -23,24 +22,22 @@ main = defaultMain
   [ withResource (BS.readFile "benchmarks/persons.json") (const $ pure ()) $ \input ->
     bgroup "Full Decode Persons JSON"
     [ bgroup "Ordered Keys"
-      [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
-        bench "SIMD Decode" $
-          nfIO (do { decode =<< input :: IO [Person] })
+      [ bench "SIMD Decode" $
+          nfIO (decode =<< input :: IO [Person])
       , withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
         bench "SIMD DecodeWith" $
-          nfIO (do { decodeWith =<< envIO :: IO [Person] })
+          nfIO (decodeWith =<< envIO :: IO [Person])
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Decode Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [Person]))
       ]
     , bgroup "Unordered Keys"
-      [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
-        bench "SIMD Decode" $
-          nfIO (do { decode =<< input :: IO [PersonUnordered] })
+      [ bench "SIMD Decode" $
+          nfIO (decode =<< input :: IO [PersonUnordered])
       , withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
         bench "SIMD DecodeWith" $
-          nfIO (do { decodeWith =<< envIO :: IO [PersonUnordered] })
+          nfIO (decodeWith =<< envIO :: IO [PersonUnordered])
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Decode Strict" $
@@ -49,12 +46,11 @@ main = defaultMain
     ]
   , withResource (BS.readFile "benchmarks/twitter.json") (const $ pure ()) $ \input ->
     bgroup "Partial Decode Twitter JSON"
-    [ withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
-      bench "SIMD Decode" $
-        nfIO (do { decode =<< input :: IO Twitter })
+    [ bench "SIMD Decode" $
+        nfIO (decode =<< input :: IO Twitter)
     , withResource (mkSIMDJSONEnv =<< input) (const $ pure ()) $ \envIO ->
       bench "SIMD DecodeWith" $
-        nfIO (do { decodeWith =<< envIO :: IO Twitter })
+        nfIO (decodeWith =<< envIO :: IO Twitter)
     , bench "Aeson Decode Lazy" $
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Decode Strict" $
@@ -95,13 +91,13 @@ data Friend =
     } deriving (Show, Generic, NFData)
 
 instance FromJSON Friend where
-  parseJSON valPtr = withObject valPtr $ \obj ->
+  parseJSON = withObject $ \obj ->
     Friend
       <$> obj .:> "id"
       <*> obj .:> "name"
 
 instance FromJSON Person where
-  parseJSON valPtr = withObject valPtr $ \obj ->
+  parseJSON = withObject $ \obj ->
     Person
       <$> obj .:> "_id"
       <*> obj .:> "index"
@@ -186,7 +182,7 @@ data PersonUnordered =
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
 instance FromJSON PersonUnordered where
-  parseJSON valPtr = withObject valPtr $ \obj ->
+  parseJSON = withObject $ \obj ->
     PersonUnordered
       <$> obj .: "favoriteFruit"
       <*> obj .: "isActive"
@@ -219,7 +215,8 @@ data Twitter =
 
 data Status =
   Status
-    { user :: User
+    { metadata :: Metadata
+    , user     :: User
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
 data User =
@@ -230,18 +227,31 @@ data User =
     , url         :: Maybe Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
+data Metadata =
+  Metadata
+    { result_type :: Text
+    , iso_language_code :: Text
+    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+
 instance FromJSON Twitter where
-  parseJSON val = withObject val $ \obj ->
+  parseJSON = withObject $ \obj ->
     Twitter
       <$> obj .:> "statuses"
 
 instance FromJSON Status where
-  parseJSON val = withObject val $ \obj -> do
+  parseJSON = withObject $ \obj ->
     Status
-      <$> obj .:> "user"
+      <$> obj .:> "metadata"
+      <*> obj .:> "user"
+
+instance FromJSON Metadata where
+  parseJSON = withObject $ \obj ->
+    Metadata
+      <$> obj .:> "result_type"
+      <*> obj .:> "iso_language_code"
 
 instance FromJSON User where
-  parseJSON val = withObject val $ \obj -> do
+  parseJSON = withObject $ \obj ->
     User
       <$> obj .:> "screen_name"
       <*> obj .:> "location"
