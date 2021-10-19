@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Data.SIMDJSON
@@ -26,9 +26,9 @@ import           Control.Exception     (Exception, mask_, throwIO, toException)
 import           Control.Monad         (foldM, (>=>))
 import qualified Data.Aeson            as Aeson
 import           Data.ByteString
-import           Data.Foldable         (for_)
-import           Data.Functor.Identity (Identity(..))
 import qualified Data.DList            as DList
+import           Data.Foldable         (for_)
+import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
 import qualified Data.Text             as T
@@ -43,7 +43,7 @@ import           Foreign.Marshal.Utils
 import           Foreign.Ptr
 import           Foreign.StablePtr
 import           Foreign.Storable
-import           GHC.Float (double2Float)
+import           GHC.Float             (double2Float)
 
 -- Opaque SIMD Types
 data SIMDParser
@@ -245,9 +245,9 @@ withUnorderedOptionalField objPtr key action =
     -- traceM $ "withUnorderedOptionalField " <> key
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     errCode <- toEnum . fromEnum <$> peek errPtr
-    if | errCode == SUCCESS -> Just <$> action vPtr
+    if | errCode == SUCCESS       -> Just <$> action vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
-       | otherwise -> Nothing <$ handleError errPtr
+       | otherwise                -> Nothing <$ handleError errPtr
 
 withField :: Object -> String -> (Value -> IO a) -> IO a
 withField objPtr key action =
@@ -283,33 +283,25 @@ getBool valPtr =
     handleError errPtr
     toBool <$> peek ptr
 
-getString :: Value -> IO String
-getString valPtr = mask_ $ do
+fromCStringLen :: (CStringLen -> IO a) -> Value -> IO a
+fromCStringLen f valPtr = mask_ $ do
   strPtr <- malloc
   alloca $ \lenPtr ->
     alloca $ \errPtr -> do
-      -- traceM "getString"
       getStringImpl valPtr strPtr lenPtr errPtr
       handleError errPtr
       len <- fromEnum <$> peek lenPtr
       str <- peek strPtr
-      result <- peekCStringLen (str, len)
+      result <- f (str, len)
       free strPtr
       pure result
+{-# INLINE fromCStringLen #-}
+
+getString :: Value -> IO String
+getString = fromCStringLen peekCStringLen
 
 getText :: Value -> IO Text
-getText valPtr = mask_ $ do
-  strPtr <- malloc
-  alloca $ \lenPtr ->
-    alloca $ \errPtr -> do
-      -- traceM "getText"
-      getStringImpl valPtr strPtr lenPtr errPtr
-      handleError errPtr
-      len <- fromEnum <$> peek lenPtr
-      str <- peek strPtr
-      txt <- T.peekCStringLen (str, len)
-      free strPtr
-      pure txt
+getText = fromCStringLen T.peekCStringLen
 
 isNull :: Value -> IO Bool
 isNull valPtr = toBool <$> isNullImpl valPtr
@@ -328,8 +320,8 @@ iterateOverArray iterPtr action = go DList.empty
   where
     go acc = do
       -- traceM "arrIterIsDone"
-      isOver <- arrayIterIsDoneImpl iterPtr
-      if not $ toBool isOver
+      isOver <- toBool <$> arrayIterIsDoneImpl iterPtr
+      if not isOver
         then
           alloca $ \errPtr ->
           allocaValue $ \valPtr -> do
@@ -343,23 +335,31 @@ iterateOverArray iterPtr action = go DList.empty
         else
           pure $ DList.toList acc
 
-(.:) :: FromJSON a => Object -> String -> IO a
-infixl 5 .:
-objPtr .: key = withUnorderedField objPtr key parseJSON
-
-(.:?) :: FromJSON a => Object -> String -> IO (Maybe a)
-infixl 5 .:?
-objPtr .:? key = withUnorderedOptionalField objPtr key parseJSON
-
-(.:>) :: FromJSON a => Object -> String -> IO a
-infixl 5 .:>
-objPtr .:> key = withField objPtr key parseJSON
-
 getRawJSONString :: Document -> IO ByteString
 getRawJSONString docPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
     getRawJSONStringImpl docPtr ptr errPtr
     peek ptr >>= packCString
+
+-- Public Interface
+
+-- | Find an object field by key, where an exception is thrown
+-- if the key is missing.
+(.:) :: FromJSON a => Object -> String -> IO a
+infixl 5 .:
+objPtr .: key = withUnorderedField objPtr key parseJSON
+
+-- | Find an object field by key, where Nothing is returned
+-- if the key is missing.
+(.:?) :: FromJSON a => Object -> String -> IO (Maybe a)
+infixl 5 .:?
+objPtr .:? key = withUnorderedOptionalField objPtr key parseJSON
+
+-- | Uses find_field, which means if you access a field out-of-order
+-- this will throw an exception. It also cannot support optional fields.
+(.:>) :: FromJSON a => Object -> String -> IO a
+infixl 5 .:>
+objPtr .:> key = withField objPtr key parseJSON
 
 class FromJSON a where
   parseJSON :: Value -> IO a
@@ -389,17 +389,19 @@ parseChar :: String -> IO Char
 parseChar [x] = pure x
 parseChar _   = fail "expected a string of length 1"
 
-instance (FromJSON a) => FromJSON [a] where
-  parseJSON = parseJSON1
-
 class FromJSON1 f where
   liftParseJSON :: (Value -> IO a) -> (Value -> IO [a]) -> Value -> IO (f a)
   liftParseJSONList :: (Value -> IO a) -> (Value -> IO [a]) -> Value -> IO [f a]
   liftParseJSONList f g v = listParser (liftParseJSON f g) v
 
+-- List
 instance FromJSON1 [] where
   liftParseJSON _ p = p
 
+instance (FromJSON a) => FromJSON [a] where
+  parseJSON = parseJSON1
+
+-- Maybe -- when values can be null
 instance FromJSON1 Maybe where
   liftParseJSON p _ a = do
     nil <- isNull a
@@ -410,6 +412,7 @@ instance FromJSON1 Maybe where
 instance (FromJSON a) => FromJSON (Maybe a) where
   parseJSON = parseJSON1
 
+-- Identity Functor
 instance FromJSON1 Identity where
   liftParseJSON p _ a = Identity <$> p a
   liftParseJSONList _ p a = fmap Identity <$> p a
@@ -466,10 +469,10 @@ mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
   ptr <- makeInputImpl cstr (toEnum len)
   newForeignPtr deleteInputImpl ptr
 
-decode
-  :: FromJSON a
-  => ByteString
-  -> IO a
+-- | Construct a SIMDJSONEnv from the provided input and decode it.
+-- The simdjson instances will be out of scope when decode returns, which
+-- means the garbage collector will/should run their finalizers.
+decode :: FromJSON a => ByteString -> IO a
 decode bs = do
   parser <- mkSIMDParser
   document <- mkSIMDDocument
@@ -479,6 +482,8 @@ decode bs = do
       withForeignPtr input $ \inputPtr ->
         withDocument (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr) parseJSON
 
+-- | Decode with a caller-provided `SIMDJSONEnv`. If the caller retains a reference to
+-- the `SIMDJSONEnv` then the simdjson instance finalizers will not be run.
 decodeWith :: FromJSON a => SIMDJSONEnv -> IO a
 decodeWith env =
   withForeignPtr (simdParser env) $ \parserPtr ->
