@@ -3,8 +3,8 @@
 using namespace simdjson;
 extern "C" {
 
-  ondemand::parser *parser_init() {
-    return new ondemand::parser();
+  ondemand::parser *parser_init(size_t max_cap) {
+    return new ondemand::parser(max_cap);
   }
 
   void parser_destroy(ondemand::parser *parser) {
@@ -23,13 +23,29 @@ extern "C" {
     return new padded_string(bytes, len);
   }
 
+  padded_string_view *make_input_view(const char *bytes, size_t len, size_t capacity) {
+    return new padded_string_view(bytes, len, capacity);
+  }
+
   void delete_input(padded_string *str) {
+    delete str;
+  }
+
+  void delete_input_view(padded_string_view *str) {
     delete str;
   }
 
   void get_iterator(
       ondemand::parser &parser, 
       padded_string &input, 
+      ondemand::document &out, 
+      error_code &error) {
+    parser.iterate(input).tie(out, error);
+  }
+
+  void get_iterator_from_view(
+      ondemand::parser &parser, 
+      padded_string_view &input, 
       ondemand::document &out, 
       error_code &error) {
     parser.iterate(input).tie(out, error);

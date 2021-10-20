@@ -9,6 +9,7 @@ module Data.Hermes
   , getRawJSONString
   , isNull
   , mkHermesEnv
+  , mkHermesEnv_
   , withArray
   , withBool
   , withDouble
@@ -37,6 +38,7 @@ import           Control.Monad         ((>=>))
 import           Data.ByteString
 import qualified Data.DList            as DList
 import           Data.Functor.Identity (Identity (..))
+import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
 import qualified Data.Text.Foreign     as T
 import           Foreign.C.String
@@ -52,6 +54,7 @@ import           GHC.Float             (double2Float)
 data SIMDParser
 data SIMDDocument
 data PaddedString
+data PaddedStringView
 type ErrPtr = Ptr CInt
 
 -- Opaque JSON Types
@@ -62,7 +65,7 @@ data JSONArrayIter
 
 -- Constructor/destructors
 foreign import ccall unsafe "parser_init" parserInit
-  :: IO (Ptr SIMDParser)
+  :: CSize -> IO (Ptr SIMDParser)
 
 foreign import ccall unsafe "&parser_destroy" parserDestroy
   :: FunPtr (Ptr SIMDParser -> IO ())
@@ -79,9 +82,18 @@ foreign import ccall unsafe "make_input" makeInputImpl
 foreign import ccall unsafe "&delete_input" deleteInputImpl
   :: FunPtr (Ptr PaddedString -> IO ())
 
+foreign import ccall unsafe "make_input_view" makeInputViewImpl
+  :: CString -> CSize -> CSize -> IO (Ptr PaddedStringView)
+
+foreign import ccall unsafe "&delete_input_view" deleteInputViewImpl
+  :: FunPtr (Ptr PaddedStringView -> IO ())
+
 -- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
   :: Parser -> InputBuffer -> Document -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "get_iterator_from_view" getIteratorFromViewImpl
+  :: Parser -> InputView -> Document -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
   :: Document -> Value -> ErrPtr -> IO ()
@@ -200,6 +212,9 @@ newtype Document = Document (Ptr SIMDDocument)
 -- | A reference to an opaque simdjson::padded_string.
 newtype InputBuffer = InputBuffer (Ptr PaddedString)
 
+-- | A reference to an opaque simdjson::padded_string_view.
+newtype InputView = InputView (Ptr PaddedStringView)
+
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
 
@@ -212,8 +227,8 @@ newtype Array = Array (Ptr JSONArray)
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 
-withDocument :: Parser -> Document -> InputBuffer -> (Value -> IO a) -> IO a
-withDocument parserPtr docPtr inputPtr action =
+withDocument :: (Value -> IO a) -> Parser -> Document -> InputBuffer -> IO a
+withDocument f parserPtr docPtr inputPtr =
   allocaValue $ \valPtr ->
   alloca $ \errPtr -> do
     -- traceM "getIterator"
@@ -222,7 +237,19 @@ withDocument parserPtr docPtr inputPtr action =
     -- traceM "getDocumentValue"
     getDocumentValueImpl docPtr valPtr errPtr
     handleError errPtr
-    action valPtr
+    f valPtr
+
+_withDocumentView :: (Value -> IO a) -> Parser -> Document -> InputView -> IO a
+_withDocumentView f parserPtr docPtr inputPtr =
+  allocaValue $ \valPtr ->
+  alloca $ \errPtr -> do
+    -- traceM "getIterator"
+    getIteratorFromViewImpl parserPtr inputPtr docPtr errPtr
+    handleError errPtr
+    -- traceM "getDocumentValue"
+    getDocumentValueImpl docPtr valPtr errPtr
+    handleError errPtr
+    f valPtr
 
 withObject :: (Object -> IO a) -> Value -> IO a
 withObject f valPtr =
@@ -476,25 +503,31 @@ listParser f valPtr =
 
 data HermesEnv =
   HermesEnv
-    { simdParser :: ForeignPtr SIMDParser
-    , simdDoc    :: ForeignPtr SIMDDocument
-    , simdInput  :: ForeignPtr PaddedString
+    { simdParser      :: ForeignPtr SIMDParser
+    , simdDoc         :: ForeignPtr SIMDDocument
     }
 
-mkHermesEnv :: ByteString -> IO HermesEnv
-mkHermesEnv bytes = do
-  parser   <- mkSIMDParser
+-- | Make a new HermesEnv. This allocates memory in C to hold foreign references to
+-- a simdjson::ondemand::parser and a simdjson::ondemand::document.
+-- The instances are re-used on successive decodes via `decodeWith`.
+-- The optional capacity argument sets the max capacity in bytes for the
+-- simdjson::ondemand::parser, which defaults to 4GB.
+mkHermesEnv :: Maybe Int -> IO HermesEnv
+mkHermesEnv mCapacity = do
+  parser   <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
-  input    <- mkSIMDPaddedStr bytes
   pure HermesEnv
     { simdParser = parser
-    , simdDoc = document
-    , simdInput = input
+    , simdDoc    = document
     }
 
-mkSIMDParser :: IO (ForeignPtr SIMDParser)
-mkSIMDParser = mask_ $ do
-  ptr <- parserInit
+mkHermesEnv_ :: IO HermesEnv
+mkHermesEnv_ = mkHermesEnv Nothing
+
+mkSIMDParser :: Maybe Int -> IO (ForeignPtr SIMDParser)
+mkSIMDParser mCap = mask_ $ do
+  let maxCap = 4000000000;
+  ptr <- parserInit . toEnum $ fromMaybe maxCap mCap
   newForeignPtr parserDestroy ptr
 
 mkSIMDDocument :: IO (ForeignPtr SIMDDocument)
@@ -507,24 +540,40 @@ mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
   ptr <- makeInputImpl cstr (toEnum len)
   newForeignPtr deleteInputImpl ptr
 
--- | Construct a SIMDJSONEnv from the provided input and decode it.
+_mkSIMDPaddedStrView :: CString -> Int -> Int -> IO (ForeignPtr PaddedStringView)
+_mkSIMDPaddedStrView buf len cap = mask_ $ do
+  ptr <- makeInputViewImpl buf (toEnum len) (toEnum cap)
+  newForeignPtr deleteInputViewImpl ptr
+
+_mkSIMDJSONBuffer :: Int -> IO (ForeignPtr CString)
+_mkSIMDJSONBuffer = mask_ . mallocForeignPtrBytes
+
+-- | Construct an ephemeral `HermesEnv` and use it to decode the input.
 -- The simdjson instances will be out of scope when decode returns, which
 -- means the garbage collector will/should run their finalizers.
+-- This is convenient for users who do not need to hold onto a `HermesEnv` for
+-- a long-running application (like a server). There is a small performance penalty
+-- for creating the simdjson instances on each decode.
 decode :: FromJSON a => ByteString -> IO a
 decode bs = do
-  parser <- mkSIMDParser
+  parser   <- mkSIMDParser Nothing
   document <- mkSIMDDocument
-  input <- mkSIMDPaddedStr bs
+  input    <- mkSIMDPaddedStr bs
   withForeignPtr parser $ \parserPtr ->
     withForeignPtr document $ \docPtr ->
       withForeignPtr input $ \inputPtr ->
-        withDocument (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr) parseJSON
+        withDocument parseJSON
+          (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr)
 
 -- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
 -- the `HermesEnv` then the simdjson instance finalizers will not be run.
-decodeWith :: FromJSON a => HermesEnv -> IO a
-decodeWith env =
+-- This is useful for long-running applications that want to re-use simdjson instances
+-- for optimal performance.
+decodeWith :: FromJSON a => HermesEnv -> ByteString -> IO a
+decodeWith env bs =
   withForeignPtr (simdParser env) $ \parserPtr ->
-  withForeignPtr (simdDoc env) $ \docPtr ->
-  withForeignPtr (simdInput env) $ \inputPtr ->
-  withDocument (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr) parseJSON
+  withForeignPtr (simdDoc env) $ \docPtr -> do
+    paddedStr <- mkSIMDPaddedStr bs
+    withForeignPtr paddedStr $ \paddedStrPtr ->
+      withDocument parseJSON
+        (Parser parserPtr) (Document docPtr) (InputBuffer paddedStrPtr)

@@ -20,13 +20,13 @@ import           Data.Hermes
 main :: IO ()
 main = defaultMain
   [ withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
+    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Full Decode Persons Array JSON"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
           nfIO (decode =<< input :: IO [Person])
-      , withResource (mkHermesEnv =<< input) (const $ pure ()) $ \envIO ->
-        bench "Hermes DecodeWith" $
-          nfIO (decodeWith =<< envIO :: IO [Person])
+      , bench "Hermes DecodeWith" $
+          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs:: IO [Person]})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Decode Strict" $
@@ -35,9 +35,8 @@ main = defaultMain
     , bgroup "Unordered Keys"
       [ bench "Hermes Decode" $
           nfIO (decode =<< input :: IO [PersonUnordered])
-      , withResource (mkHermesEnv =<< input) (const $ pure ()) $ \envIO ->
-        bench "Hermes DecodeWith" $
-          nfIO (decodeWith =<< envIO :: IO [PersonUnordered])
+      , bench "Hermes DecodeWith" $
+          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs :: IO [PersonUnordered]})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Decode Strict" $
@@ -45,12 +44,12 @@ main = defaultMain
       ]
     ]
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
+    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Partial Decode Twitter JSON"
     [ bench "Hermes Decode" $
         nfIO (decode =<< input :: IO Twitter)
-    , withResource (mkHermesEnv =<< input) (const $ pure ()) $ \envIO ->
-      bench "Hermes DecodeWith" $
-        nfIO (decodeWith =<< envIO :: IO Twitter)
+    , bench "Hermes DecodeWith" $
+        nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs :: IO Twitter})
     , bench "Aeson Decode Lazy" $
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Decode Strict" $
