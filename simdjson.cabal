@@ -19,7 +19,6 @@ executable simdjson
 library
   exposed-modules:  Data.SIMDJSON
   build-depends:    
-    aeson,
     base,
     bytestring,
     dlist,

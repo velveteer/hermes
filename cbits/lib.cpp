@@ -129,11 +129,13 @@ extern "C" {
 
   void get_string(
       ondemand::value &val, 
-      std::string_view &out, 
+      const char **out, 
       int64_t &len, 
       error_code &error) {
-    val.get_string().tie(out, error);
-    len = out.length();
+    std::string_view buf;
+    val.get_string().tie(buf, error);
+    *out = buf.data();
+    len = buf.length();
   }
 
   ondemand::json_type get_json_type(ondemand::value &val) {
