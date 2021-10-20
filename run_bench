@@ -1,2 +1,0 @@
-#! /bin/bash
-exec cabal bench --benchmark-options '--svg=bench.svg +RTS -T'

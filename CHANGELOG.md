@@ -1,4 +1,4 @@
-# Revision history for simdjson
+# Revision history for hermes
 
 ## 0.1.0.0 -- YYYY-mm-dd
 

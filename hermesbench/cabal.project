@@ -1,0 +1,3 @@
+packages:
+  ./hermesbench.cabal
+  ../hermes.cabal
