@@ -8,7 +8,15 @@ module Data.Hermes
   , decodeWith
   , getRawJSONString
   , mkHermesEnv
+  , isNull
+  , mkSIMDJSONEnv
+  , withArray
+  , withBool
+  , withDouble
+  , withInt
   , withObject
+  , withString
+  , withText
   , HermesEnv
   , FromJSON(..)
   , (.:)
@@ -16,6 +24,7 @@ module Data.Hermes
   , (.:>)
   , Value
   , Object
+  , Array
   , ArrayIter
   , SIMDParser
   , SIMDDocument
@@ -49,6 +58,7 @@ type ErrPtr = Ptr CInt
 -- Opaque JSON Types
 data JSONValue
 data JSONObject
+data JSONArray
 data JSONArrayIter
 
 -- Constructor/destructors
@@ -80,11 +90,11 @@ foreign import ccall unsafe "get_document_value" getDocumentValueImpl
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
   :: Value -> Object -> ErrPtr -> IO ()
 
--- foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
---   :: Value -> Array -> Ptr CSize -> ErrPtr -> IO ()
+foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
+  :: Value -> Array -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_array_iter" getArrayIterImpl
-  :: Value -> ArrayIter -> ErrPtr -> IO ()
+  :: Array -> ArrayIter -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "arr_iter_is_done" arrayIterIsDoneImpl
   :: ArrayIter -> IO CBool
@@ -167,6 +177,9 @@ allocaValue f = allocaBytes 24 $ \val -> f (Value val)
 allocaObject :: (Object -> IO a) -> IO a
 allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
 
+allocaArray :: (Array -> IO a) -> IO a
+allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
+
 allocaArrayIter :: (ArrayIter -> IO a) -> IO a
 allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
 
@@ -194,6 +207,9 @@ newtype Value = Value (Ptr JSONValue)
 -- | A reference to an opaque simdjson::ondemand::object.
 newtype Object = Object (Ptr JSONObject)
 
+-- | A reference to an opaque simdjson::ondemand::array.
+newtype Array = Array (Ptr JSONArray)
+
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 
@@ -218,37 +234,37 @@ withObject f valPtr =
     handleError errPtr
     f oPtr
 
-withUnorderedField :: Object -> String -> (Value -> IO a) -> IO a
-withUnorderedField objPtr key action =
+withUnorderedField :: (Value -> IO a) -> Object -> String -> IO a
+withUnorderedField f objPtr key =
   withCString key $ \cstr ->
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> do
     -- traceM $ "withUnorderedField " <> key
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
-    action vPtr
+    f vPtr
 
-withUnorderedOptionalField :: Object -> String -> (Value -> IO a) -> IO (Maybe a)
-withUnorderedOptionalField objPtr key action =
+withUnorderedOptionalField :: (Value -> IO a) -> Object -> String -> IO (Maybe a)
+withUnorderedOptionalField f objPtr key =
   withCString key $ \cstr ->
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> do
     -- traceM $ "withUnorderedOptionalField " <> key
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     errCode <- toEnum . fromEnum <$> peek errPtr
-    if | errCode == SUCCESS       -> Just <$> action vPtr
+    if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
 
-withField :: Object -> String -> (Value -> IO a) -> IO a
-withField objPtr key action =
+withField :: (Value -> IO a) -> Object -> String -> IO a
+withField f objPtr key =
   withCString key $ \cstr ->
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> do
     -- traceM $ "withField " <> key
     findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
-    action vPtr
+    f vPtr
 
 getInt :: Value -> IO Int
 getInt valPtr =
@@ -258,6 +274,9 @@ getInt valPtr =
     handleError errPtr
     fromEnum <$> peek ptr
 
+withInt :: (Int -> IO a) -> Value -> IO a
+withInt f = getInt >=> f
+
 getDouble :: Value -> IO Double
 getDouble valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
@@ -266,6 +285,9 @@ getDouble valPtr =
     handleError errPtr
     realToFrac <$> peek ptr
 
+withDouble :: (Double -> IO a) -> Value -> IO a
+withDouble f = getDouble >=> f
+
 getBool :: Value -> IO Bool
 getBool valPtr =
   alloca $ \ptr -> alloca $ \errPtr -> do
@@ -273,6 +295,9 @@ getBool valPtr =
     getBoolImpl valPtr ptr errPtr
     handleError errPtr
     toBool <$> peek ptr
+
+withBool :: (Bool -> IO a) -> Value -> IO a
+withBool f = getBool >=> f
 
 fromCStringLen :: (CStringLen -> IO a) -> Value -> IO a
 fromCStringLen f valPtr = mask_ $ do
@@ -294,20 +319,35 @@ getString = fromCStringLen peekCStringLen
 getText :: Value -> IO Text
 getText = fromCStringLen T.peekCStringLen
 
+withString :: (String -> IO a) -> Value -> IO a
+withString f = getString >=> f
+
+withText :: (Text -> IO a) -> Value -> IO a
+withText f = getText >=> f
+
 isNull :: Value -> IO Bool
 isNull valPtr = toBool <$> isNullImpl valPtr
 
-withArrayElems :: FromJSON a => Value -> IO [a]
-withArrayElems valPtr =
+withArray :: (Array -> IO a) -> Value -> IO a
+withArray f val =
+  alloca $ \errPtr ->
+  allocaArray $ \arrPtr -> do
+    -- traceM "withArray"
+    getArrayFromValueImpl val arrPtr errPtr
+    handleError errPtr
+    f arrPtr
+
+withArrayIter :: (ArrayIter -> IO a) -> Array -> IO a
+withArrayIter f arrPtr =
   alloca $ \errPtr ->
   allocaArrayIter $ \iterPtr -> do
-    -- traceM "withArrayElems"
-    getArrayIterImpl valPtr iterPtr errPtr
+    -- traceM "withArrayIter"
+    getArrayIterImpl arrPtr iterPtr errPtr
     handleError errPtr
-    iterateOverArray iterPtr parseJSON
+    f iterPtr
 
-iterateOverArray :: ArrayIter -> (Value -> IO a) -> IO [a]
-iterateOverArray iterPtr action = go DList.empty
+iterateOverArray :: (Value -> IO a) -> ArrayIter -> IO [a]
+iterateOverArray f iterPtr = go DList.empty
   where
     go acc = do
       -- traceM "arrIterIsDone"
@@ -319,7 +359,7 @@ iterateOverArray iterPtr action = go DList.empty
             -- traceM "arrayIterGetCurrent"
             arrayIterGetCurrentImpl iterPtr valPtr errPtr
             handleError errPtr
-            result <- action valPtr
+            result <- f valPtr
             -- traceM "arrayIterMoveNext"
             arrayIterMoveNextImpl iterPtr
             go (acc <> DList.singleton result)
@@ -338,24 +378,35 @@ getRawJSONString docPtr =
 -- if the key is missing.
 (.:) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:
-objPtr .: key = withUnorderedField objPtr key parseJSON
+objPtr .: key = withUnorderedField parseJSON objPtr key
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
 (.:?) :: FromJSON a => Object -> String -> IO (Maybe a)
 infixl 5 .:?
-objPtr .:? key = withUnorderedOptionalField objPtr key parseJSON
+objPtr .:? key = withUnorderedOptionalField parseJSON objPtr key
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
 (.:>) :: FromJSON a => Object -> String -> IO a
 infixl 5 .:>
-objPtr .:> key = withField objPtr key parseJSON
+objPtr .:> key = withField parseJSON objPtr key
 
 class FromJSON a where
   parseJSON :: Value -> IO a
   parseJSONList :: Value -> IO [a]
-  parseJSONList = withArrayElems
+  parseJSONList = parseArray
+
+parseArray :: FromJSON a => Value -> IO [a]
+parseArray valPtr =
+  flip withArray valPtr $ \arrPtr ->
+  flip withArrayIter arrPtr $ iterateOverArray parseJSON
+
+-- | This is convenient for writing nested object parsers,
+-- but it is a possible footgun for users who parse values
+-- out of order.
+instance FromJSON Value where
+  parseJSON = pure
 
 instance FromJSON Text where
   parseJSON = getText
@@ -418,11 +469,8 @@ parseJSON1 = liftParseJSON parseJSON parseJSONList
 
 listParser :: (Value -> IO a) -> Value -> IO [a]
 listParser f valPtr =
-  alloca $ \errPtr ->
-  allocaArrayIter $ \iterPtr -> do
-    getArrayIterImpl valPtr iterPtr errPtr
-    handleError errPtr
-    iterateOverArray iterPtr f
+  flip withArray valPtr $ \arrPtr ->
+  flip withArrayIter arrPtr $ iterateOverArray f
 {-# INLINE listParser #-}
 
 -- Decoding

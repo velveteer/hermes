@@ -12,7 +12,6 @@ extra-source-files: cbits, CHANGELOG.md
 library
   exposed-modules:  Data.Hermes
   build-depends:    
-    aeson,
     base,
     bytestring,
     dlist,
