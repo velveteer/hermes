@@ -215,8 +215,10 @@ data Twitter =
 
 data Status =
   Status
-    { metadata :: Metadata
-    , user     :: User
+    { user              :: User
+    -- metadata object fields
+    , result_type       :: Text
+    , iso_language_code :: Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
 data User =
@@ -227,28 +229,19 @@ data User =
     , url         :: Maybe Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-data Metadata =
-  Metadata
-    { result_type :: Text
-    , iso_language_code :: Text
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
-
 instance FromJSON Twitter where
   parseJSON = withObject $ \obj ->
     Twitter
       <$> obj .:> "statuses"
 
 instance FromJSON Status where
-  parseJSON = withObject $ \obj ->
-    Status
-      <$> obj .:> "metadata"
-      <*> obj .:> "user"
-
-instance FromJSON Metadata where
-  parseJSON = withObject $ \obj ->
-    Metadata
-      <$> obj .:> "result_type"
-      <*> obj .:> "iso_language_code"
+  parseJSON = withObject $ \obj -> do
+    u <- obj .: "user"
+    md <- obj .: "metadata"
+    flip withObject md $ \m -> do
+      result <- m .:> "result_type"
+      iso <- m .:> "iso_language_code"
+      pure $ Status u result iso
 
 instance FromJSON User where
   parseJSON = withObject $ \obj ->

@@ -32,7 +32,6 @@ The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of ob
 
 ## Limitations
 
-Since this is based on an iterator that uses a global cursor, you must be mindful to not access values out of order.
-The library tries to avoid letting you do this by not defining `FromJSON` instances for opaque types like `Value`, `Object` or `Array`. In other words, you cannot hold onto a `Value` in order to parse it later; you must parse values as you encounter them.
+Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it. 
 
-It would be possible to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 
+It would be possible to wrap the `simdjson::dom` API, which would allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 

@@ -57,27 +57,21 @@ extern "C" {
       ondemand::value &val, 
       ondemand::object &out, 
       error_code &error) {
-      val.get_object().tie(out, error);
+    val.get_object().tie(out, error);
   }
 
   void get_array_from_value(
       ondemand::value &val, 
       ondemand::array &out, 
-      size_t *len, 
       error_code &error) {
     val.get_array().tie(out, error);
-    *len = out.count_elements();
   }
 
-  bool get_array_iter(
-      ondemand::value &val, 
+  void get_array_iter(
+      ondemand::array &arr, 
       ondemand::array_iterator &iterOut, 
       error_code &error) {
-    ondemand::array arr;
-    auto err = val.get_array().get(arr);
-    if (err != SUCCESS) { error = err; return false; } 
     arr.begin().tie(iterOut, error);
-    return true;
   }
 
   bool arr_iter_is_done(ondemand::array_iterator &arr) {
