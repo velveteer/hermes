@@ -7,9 +7,8 @@ module Data.Hermes
   ( decode
   , decodeWith
   , getRawJSONString
-  , mkHermesEnv
   , isNull
-  , mkSIMDJSONEnv
+  , mkHermesEnv
   , withArray
   , withBool
   , withDouble
