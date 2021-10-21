@@ -9,7 +9,7 @@ module Main where
 import           Control.DeepSeq       (NFData)
 import qualified Data.Aeson            as Aeson
 import qualified Data.ByteString       as BS
-import           Data.Functor.Identity (Identity)
+import           Data.Functor.Identity (Identity(..))
 import           Data.Text             (Text)
 import           GHC.Generics          (Generic)
 import           Test.Tasty            (withResource)
@@ -24,9 +24,9 @@ main = defaultMain
     bgroup "Full Decode Persons Array JSON"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (decode =<< input :: IO [Person])
+          nfIO (flip decode (list decodePerson) =<< input :: IO [Person])
       , bench "Hermes DecodeWith" $
-          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs:: IO [Person]})
+          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Decode Strict" $
@@ -34,9 +34,9 @@ main = defaultMain
       ]
     , bgroup "Unordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (decode =<< input :: IO [PersonUnordered])
+          nfIO (flip decode (list decodePersonUnordered) =<< input :: IO [PersonUnordered])
       , bench "Hermes DecodeWith" $
-          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs :: IO [PersonUnordered]})
+          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Decode Strict" $
@@ -47,9 +47,9 @@ main = defaultMain
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Partial Decode Twitter JSON"
     [ bench "Hermes Decode" $
-        nfIO (decode =<< input :: IO Twitter)
+        nfIO (flip decode decodeTwitter =<< input :: IO Twitter)
     , bench "Hermes DecodeWith" $
-        nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs :: IO Twitter})
+        nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
     , bench "Aeson Decode Lazy" $
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Decode Strict" $
@@ -83,43 +83,43 @@ data Person =
     , favoriteFruit :: Text
     } deriving (Show, Generic, NFData)
 
+decodePerson :: Value -> IO Person
+decodePerson = withObject $ \obj ->
+  Person
+    <$> atOrderedKey "_id" text obj
+    <*> atOrderedKey "index" int obj
+    <*> atOrderedKey "guid" text obj
+    <*> atOrderedKey "isActive" bool obj
+    <*> atOrderedKey "balance" text obj
+    <*> atOrderedKey "picture" (nullable text) obj
+    <*> atOrderedKey "age" int obj
+    <*> atOrderedKey "eyeColor" text obj
+    <*> atOrderedKey "name" text obj
+    <*> atOrderedKey "gender" text obj
+    <*> atOrderedKey "company" text obj
+    <*> atOrderedKey "email" text obj
+    <*> (Identity <$> atOrderedKey "phone" text obj)
+    <*> atOrderedKey "address" text obj
+    <*> atOrderedKey "about" text obj
+    <*> atOrderedKey "registered" text obj
+    <*> atOrderedKey "latitude" double obj
+    <*> atOrderedKey "longitude" double obj
+    <*> atOrderedKey "tags" (list text) obj
+    <*> (Identity <$> atOrderedKey "friends" (list decodeFriend) obj)
+    <*> atOrderedKey "greeting" (nullable text) obj
+    <*> atOrderedKey "favoriteFruit" text obj
+
+decodeFriend :: Value -> IO Friend
+decodeFriend = withObject $ \obj ->
+  Friend
+    <$> atOrderedKey "id" int obj
+    <*> atOrderedKey "name" text obj
+
 data Friend =
   Friend
     { id   :: Int
     , name :: Text
     } deriving (Show, Generic, NFData)
-
-instance FromJSON Friend where
-  parseJSON = withObject $ \obj ->
-    Friend
-      <$> obj .:> "id"
-      <*> obj .:> "name"
-
-instance FromJSON Person where
-  parseJSON = withObject $ \obj ->
-    Person
-      <$> obj .:> "_id"
-      <*> obj .:> "index"
-      <*> obj .:> "guid"
-      <*> obj .:> "isActive"
-      <*> obj .:> "balance"
-      <*> obj .:> "picture"
-      <*> obj .:> "age"
-      <*> obj .:> "eyeColor"
-      <*> obj .:> "name"
-      <*> obj .:> "gender"
-      <*> obj .:> "company"
-      <*> obj .:> "email"
-      <*> obj .:> "phone"
-      <*> obj .:> "address"
-      <*> obj .:> "about"
-      <*> obj .:> "registered"
-      <*> obj .:> "latitude"
-      <*> obj .:> "longitude"
-      <*> obj .:> "tags"
-      <*> obj .:> "friends"
-      <*> obj .:> "greeting"
-      <*> obj .:> "favoriteFruit"
 
 instance Aeson.FromJSON Person where
   parseJSON = Aeson.withObject "Person" $ \obj ->
@@ -180,32 +180,32 @@ data PersonUnordered =
     , friends       :: [Friend]
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-instance FromJSON PersonUnordered where
-  parseJSON = withObject $ \obj ->
-    PersonUnordered
-      <$> obj .: "favoriteFruit"
-      <*> obj .: "isActive"
-      <*> obj .: "longitude"
-      <*> obj .: "balance"
-      <*> obj .: "email"
-      <*> obj .: "latitude"
-      <*> obj .: "age"
-      <*> obj .: "eyeColor"
-      <*> obj .: "index"
-      <*> obj .: "guid"
-      <*> obj .: "name"
-      <*> obj .: "greeting"
-      <*> obj .:? "nonexistent"
-      <*> obj .: "company"
-      <*> obj .: "picture"
-      <*> obj .: "phone"
-      <*> obj .: "_id"
-      <*> obj .: "address"
-      <*> obj .: "about"
-      <*> obj .: "gender"
-      <*> obj .: "registered"
-      <*> obj .: "tags"
-      <*> obj .: "friends"
+decodePersonUnordered :: Value -> IO PersonUnordered
+decodePersonUnordered = withObject $ \obj ->
+  PersonUnordered
+    <$> atKey "favoriteFruit" text obj
+    <*> atKey "isActive" bool obj
+    <*> atKey "longitude" double obj
+    <*> atKey "balance" text obj
+    <*> atKey "email" text obj
+    <*> atKey "latitude" double obj
+    <*> atKey "age" int obj
+    <*> atKey "eyeColor" text obj
+    <*> atKey "index" int obj
+    <*> atKey "guid" text obj
+    <*> atKey "name" text obj
+    <*> atKey "greeting" text obj
+    <*> atOptionalKey "nonexistent" text obj
+    <*> atKey "company" text obj
+    <*> atKey "picture" text obj
+    <*> atKey "phone" text obj
+    <*> atKey "_id" text obj
+    <*> atKey "address" text obj
+    <*> atKey "about" text obj
+    <*> atKey "gender" text obj
+    <*> atKey "registered" text obj
+    <*> atKey "tags" (list text) obj
+    <*> atKey "friends" (list decodeFriend) obj
 
 data Twitter =
   Twitter
@@ -228,25 +228,25 @@ data User =
     , url         :: Maybe Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-instance FromJSON Twitter where
-  parseJSON = withObject $ \obj ->
-    Twitter
-      <$> obj .:> "statuses"
+decodeTwitter :: Value -> IO Twitter
+decodeTwitter = withObject $ \obj ->
+  Twitter
+    <$> atKey "statuses" (list decodeStatus) obj
 
-instance FromJSON Status where
-  parseJSON = withObject $ \obj -> do
-    u <- obj .: "user"
-    md <- obj .: "metadata"
+decodeStatus :: Value -> IO Status
+decodeStatus = withObject $ \obj -> do
+    u <- atKey "user" decodeUser obj
+    md <- atKey "metadata" pure obj
     flip withObject md $ \m -> do
-      result <- m .:> "result_type"
-      iso <- m .:> "iso_language_code"
+      result <- atKey "result_type" text m
+      iso <- atKey "iso_language_code" text m
       pure $ Status u result iso
 
-instance FromJSON User where
-  parseJSON = withObject $ \obj ->
-    User
-      <$> obj .:> "screen_name"
-      <*> obj .:> "location"
-      <*> obj .:> "description"
-      <*> obj .:> "url"
+decodeUser :: Value -> IO User
+decodeUser = withObject $ \obj ->
+  User
+    <$> atOrderedKey "screen_name" text obj
+    <*> atOrderedKey "location" text obj
+    <*> atOrderedKey "description" text obj
+    <*> atOrderedKey "url" (nullable text) obj
 

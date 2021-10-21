@@ -6,10 +6,21 @@
 module Data.Hermes
   ( decode
   , decodeWith
-  , getRawJSONString
+  , bool
+  , char
+  , double
+  , int
+  , string
+  , text
   , isNull
   , mkHermesEnv
   , mkHermesEnv_
+  , getRawJSONString
+  , atKey
+  , atOptionalKey
+  , atOrderedKey
+  , list
+  , nullable
   , withArray
   , withBool
   , withDouble
@@ -18,10 +29,6 @@ module Data.Hermes
   , withString
   , withText
   , HermesEnv
-  , FromJSON(..)
-  , (.:)
-  , (.:?)
-  , (.:>)
   , Value
   , Object
   , Array
@@ -37,9 +44,9 @@ import           Control.Exception     (Exception, mask_, throwIO)
 import           Control.Monad         ((>=>))
 import           Data.ByteString
 import qualified Data.DList            as DList
-import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe            (fromMaybe)
 import           Data.Text             (Text)
+import qualified Data.Text             as T
 import qualified Data.Text.Foreign     as T
 import           Foreign.C.String
 import           Foreign.C.Types
@@ -48,7 +55,6 @@ import           Foreign.Marshal.Alloc
 import           Foreign.Marshal.Utils
 import           Foreign.Ptr
 import           Foreign.Storable
-import           GHC.Float             (double2Float)
 
 -- Opaque SIMD Types
 data SIMDParser
@@ -259,6 +265,7 @@ withObject f valPtr =
     getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     f oPtr
+{-# INLINE withObject #-}
 
 withUnorderedField :: (Value -> IO a) -> Object -> String -> IO a
 withUnorderedField f objPtr key =
@@ -269,6 +276,7 @@ withUnorderedField f objPtr key =
     findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
+{-# INLINE withUnorderedField #-}
 
 withUnorderedOptionalField :: (Value -> IO a) -> Object -> String -> IO (Maybe a)
 withUnorderedOptionalField f objPtr key =
@@ -281,6 +289,7 @@ withUnorderedOptionalField f objPtr key =
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
+{-# INLINE withUnorderedOptionalField #-}
 
 withField :: (Value -> IO a) -> Object -> String -> IO a
 withField f objPtr key =
@@ -291,6 +300,7 @@ withField f objPtr key =
     findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
+{-# INLINE withField #-}
 
 getInt :: Value -> IO Int
 getInt valPtr =
@@ -299,6 +309,7 @@ getInt valPtr =
     getIntImpl valPtr ptr errPtr
     handleError errPtr
     fromEnum <$> peek ptr
+{-# INLINE getInt #-}
 
 withInt :: (Int -> IO a) -> Value -> IO a
 withInt f = getInt >=> f
@@ -310,6 +321,7 @@ getDouble valPtr =
     getDoubleImpl valPtr ptr errPtr
     handleError errPtr
     realToFrac <$> peek ptr
+{-# INLINE getDouble #-}
 
 withDouble :: (Double -> IO a) -> Value -> IO a
 withDouble f = getDouble >=> f
@@ -321,6 +333,7 @@ getBool valPtr =
     getBoolImpl valPtr ptr errPtr
     handleError errPtr
     toBool <$> peek ptr
+{-# INLINE getBool #-}
 
 withBool :: (Bool -> IO a) -> Value -> IO a
 withBool f = getBool >=> f
@@ -341,9 +354,11 @@ fromCStringLen f valPtr = mask_ $ do
 
 getString :: Value -> IO String
 getString = fromCStringLen peekCStringLen
+{-# INLINE getString #-}
 
 getText :: Value -> IO Text
 getText = fromCStringLen T.peekCStringLen
+{-# INLINE getText #-}
 
 withString :: (String -> IO a) -> Value -> IO a
 withString f = getString >=> f
@@ -353,6 +368,7 @@ withText f = getText >=> f
 
 isNull :: Value -> IO Bool
 isNull valPtr = toBool <$> isNullImpl valPtr
+{-# INLINE isNull #-}
 
 withArray :: (Array -> IO a) -> Value -> IO a
 withArray f val =
@@ -362,6 +378,7 @@ withArray f val =
     getArrayFromValueImpl val arrPtr errPtr
     handleError errPtr
     f arrPtr
+{-# INLINE withArray #-}
 
 withArrayIter :: (ArrayIter -> IO a) -> Array -> IO a
 withArrayIter f arrPtr =
@@ -371,6 +388,7 @@ withArrayIter f arrPtr =
     getArrayIterImpl arrPtr iterPtr errPtr
     handleError errPtr
     f iterPtr
+{-# INLINE withArrayIter #-}
 
 iterateOverArray :: (Value -> IO a) -> ArrayIter -> IO [a]
 iterateOverArray f iterPtr = go DList.empty
@@ -391,6 +409,7 @@ iterateOverArray f iterPtr = go DList.empty
             go (acc <> DList.singleton result)
         else
           pure $ DList.toList acc
+{-# INLINE iterateOverArray #-}
 
 getRawJSONString :: Document -> IO ByteString
 getRawJSONString docPtr =
@@ -402,104 +421,74 @@ getRawJSONString docPtr =
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
-(.:) :: FromJSON a => Object -> String -> IO a
-infixl 5 .:
-objPtr .: key = withUnorderedField parseJSON objPtr key
+atKey :: String -> (Value -> IO a) -> Object -> IO a
+atKey key parser obj = withUnorderedField parser obj key
+{-# INLINE atKey #-}
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
-(.:?) :: FromJSON a => Object -> String -> IO (Maybe a)
-infixl 5 .:?
-objPtr .:? key = withUnorderedOptionalField parseJSON objPtr key
+atOptionalKey :: String -> (Value -> IO a) -> Object -> IO (Maybe a)
+atOptionalKey key parser obj = withUnorderedOptionalField parser obj key
+{-# INLINE atOptionalKey #-}
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
-(.:>) :: FromJSON a => Object -> String -> IO a
-infixl 5 .:>
-objPtr .:> key = withField parseJSON objPtr key
+atOrderedKey :: String -> (Value -> IO a) -> Object -> IO a
+atOrderedKey key parser obj = withField parser obj key
+{-# INLINE atOrderedKey #-}
 
-class FromJSON a where
-  parseJSON :: Value -> IO a
-  parseJSONList :: Value -> IO [a]
-  parseJSONList = parseArray
+-- | Parse a homogenous JSON array into a Haskell list.
+list :: (Value -> IO a) -> Value -> IO [a]
+list f val =
+  flip withArray val $ \arr ->
+  flip withArrayIter arr $ iterateOverArray f
+{-# INLINE list #-}
 
-parseArray :: FromJSON a => Value -> IO [a]
-parseArray valPtr =
-  flip withArray valPtr $ \arrPtr ->
-  flip withArrayIter arrPtr $ iterateOverArray parseJSON
+-- | Transforms a parser to return Nothing when the value is null.
+nullable :: (Value -> IO a) -> Value -> IO (Maybe a)
+nullable parser val = do
+  nil <- isNull val
+  if nil
+    then pure Nothing
+    else Just <$> parser val
+{-# INLINE nullable #-}
 
--- | This is convenient for writing nested object parsers,
--- but it is a possible footgun for users who parse values
--- out of order.
-instance FromJSON Value where
-  parseJSON = pure
+-- | Parse only a single character. TODO Unbounded versus bounded?
+char :: Value -> IO Char
+char = getText >=> justOne
+  where
+    justOne txt =
+      case T.uncons txt of
+        Just (c, "") -> pure c
+        _ -> throwIO $ SIMDException "expected a single character"
+{-# INLINE char #-}
 
-instance FromJSON Text where
-  parseJSON = getText
+-- | Parse a JSON string into a Haskell String.
+string :: Value -> IO String
+string = getString
+{-# INLINE string #-}
 
-instance FromJSON Int where
-  parseJSON = getInt
+-- | Parse a JSON string into Haskell Text.
+text :: Value -> IO Text
+text = getText
+{-# INLINE text #-}
 
-instance FromJSON Float where
-  parseJSON = fmap double2Float . getDouble
+-- | Parse a JSON number into an unsigned Haskell Int.
+int :: Value -> IO Int
+int = getInt
+{-# INLINE int #-}
 
-instance FromJSON Double where
-  parseJSON = getDouble
+-- | Parse a JSON boolean into a Haskell Bool.
+bool :: Value -> IO Bool
+bool = getBool
+{-# INLINE bool #-}
 
-instance FromJSON Bool where
-  parseJSON = getBool
+-- | Parse a JSON number into a Haskell Double.
+double :: Value -> IO Double
+double = getDouble
+{-# INLINE double #-}
 
-instance FromJSON Char where
-  parseJSON = getString >=> parseChar
-  parseJSONList = getString
-
-parseChar :: String -> IO Char
-parseChar [x] = pure x
-parseChar _   = fail "expected a string of length 1"
-
-class FromJSON1 f where
-  liftParseJSON :: (Value -> IO a) -> (Value -> IO [a]) -> Value -> IO (f a)
-  liftParseJSONList :: (Value -> IO a) -> (Value -> IO [a]) -> Value -> IO [f a]
-  liftParseJSONList f g v = listParser (liftParseJSON f g) v
-
--- List
-instance FromJSON1 [] where
-  liftParseJSON _ p = p
-
-instance (FromJSON a) => FromJSON [a] where
-  parseJSON = parseJSON1
-
--- Maybe -- when values can be null
-instance FromJSON1 Maybe where
-  liftParseJSON p _ a = do
-    nil <- isNull a
-    if nil
-       then pure Nothing
-       else Just <$> p a
-
-instance (FromJSON a) => FromJSON (Maybe a) where
-  parseJSON = parseJSON1
-
--- Identity Functor
-instance FromJSON1 Identity where
-  liftParseJSON p _ a = Identity <$> p a
-  liftParseJSONList _ p a = fmap Identity <$> p a
-
-instance (FromJSON a) => FromJSON (Identity a) where
-  parseJSON = parseJSON1
-  parseJSONList = liftParseJSONList parseJSON parseJSONList
-
-parseJSON1 :: (FromJSON1 f, FromJSON a) => Value -> IO (f a)
-parseJSON1 = liftParseJSON parseJSON parseJSONList
-{-# INLINE parseJSON1 #-}
-
-listParser :: (Value -> IO a) -> Value -> IO [a]
-listParser f valPtr =
-  flip withArray valPtr $ \arrPtr ->
-  flip withArrayIter arrPtr $ iterateOverArray f
-{-# INLINE listParser #-}
-
--- Decoding
+-- Decoding Functions
 
 data HermesEnv =
   HermesEnv
@@ -507,7 +496,7 @@ data HermesEnv =
     , simdDoc         :: ForeignPtr SIMDDocument
     }
 
--- | Make a new HermesEnv. This allocates memory in C to hold foreign references to
+-- | Make a new HermesEnv. This allocates foreign references to
 -- a simdjson::ondemand::parser and a simdjson::ondemand::document.
 -- The instances are re-used on successive decodes via `decodeWith`.
 -- The optional capacity argument sets the max capacity in bytes for the
@@ -521,6 +510,7 @@ mkHermesEnv mCapacity = do
     , simdDoc    = document
     }
 
+-- | Shortcut for constructing a default `HermesEnv`.
 mkHermesEnv_ :: IO HermesEnv
 mkHermesEnv_ = mkHermesEnv Nothing
 
@@ -554,26 +544,26 @@ _mkSIMDJSONBuffer = mask_ . mallocForeignPtrBytes
 -- This is convenient for users who do not need to hold onto a `HermesEnv` for
 -- a long-running application (like a server). There is a small performance penalty
 -- for creating the simdjson instances on each decode.
-decode :: FromJSON a => ByteString -> IO a
-decode bs = do
+decode :: ByteString -> (Value -> IO a) -> IO a
+decode bs p = do
   parser   <- mkSIMDParser Nothing
   document <- mkSIMDDocument
   input    <- mkSIMDPaddedStr bs
   withForeignPtr parser $ \parserPtr ->
     withForeignPtr document $ \docPtr ->
       withForeignPtr input $ \inputPtr ->
-        withDocument parseJSON
+        withDocument p
           (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr)
 
 -- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
 -- the `HermesEnv` then the simdjson instance finalizers will not be run.
 -- This is useful for long-running applications that want to re-use simdjson instances
 -- for optimal performance.
-decodeWith :: FromJSON a => HermesEnv -> ByteString -> IO a
-decodeWith env bs =
+decodeWith :: HermesEnv -> ByteString -> (Value -> IO a) -> IO a
+decodeWith env bs parser =
   withForeignPtr (simdParser env) $ \parserPtr ->
   withForeignPtr (simdDoc env) $ \docPtr -> do
     paddedStr <- mkSIMDPaddedStr bs
     withForeignPtr paddedStr $ \paddedStrPtr ->
-      withDocument parseJSON
+      withDocument parser
         (Parser parserPtr) (Document docPtr) (InputBuffer paddedStrPtr)

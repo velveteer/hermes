@@ -1,10 +1,10 @@
 # Hermes 
 
-An Aeson-like interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library. Hermes, messenger of the gods, was the great-grandfather of Jason, son of Aeson.
+A Haskell interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library for decoding JSON documents. Hermes, messenger of the gods, was the great-grandfather of Jason, son of Aeson.
 
 ## Overview
 
-This library exposes a `FromJSON` typeclass that can be used to write decoders for JSON documents using the On Demand API from simdjson. From the simdjson On Demand design documentation:
+This library exposes functions that can be used to write decoders for JSON documents using the simdjson On Demand API. From the simdjson On Demand design documentation:
 
 > Good applications for the On Demand API might be:
 
@@ -14,11 +14,11 @@ This library exposes a `FromJSON` typeclass that can be used to write decoders f
 
 > You are working with stable JSON APIs which have a consistent layout and JSON dialect.
 
-With this in mind, `Data.Hermes.FromJSON` instances can potentially decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. 
+With this in mind, `Data.Hermes` parsers can potentially decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. This is because `Data.Aeson.FromJSON` must convert the entire document into a DOM, which means memory increases linearly with the input size. The On Demand API does not have this constraint because it iterates over the JSON string in memory without parsing the entire document up front. 
 
 ## Usage
 
-This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for writing `FromJSON` instances. If your Haskell type has an instance of `Data.Hermes.FromJSON`, then you can decode a strict `ByteString` with `decode` and `decodeWith`. 
+This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for writing basic decoders. You can see the benchmarks for example usage. All parsers operate in `IO` and will re-throw errors from the underlying simdjson calls.
 
 ## Benchmarks
 The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits.
@@ -35,3 +35,7 @@ The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of ob
 Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it. 
 
 Further work is coming to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 
+
+Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and token scanning), it is possible to parse an invalid JSON document but not realize it until later. Keep this is mind if you need the entire document to be validated up front, in which case the simdjson DOM API is a better fit for you.
+
+> The On Demand approach is less safe than DOM: we only validate the components of the JSON document that are used and it is possible to begin ingesting an invalid document only to find out later that the document is invalid. Are you fine ingesting a large JSON document that starts with well formed JSON but ends with invalid JSON content?
