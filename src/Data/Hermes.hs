@@ -1,6 +1,6 @@
-{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiWayIf        #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Data.Hermes
@@ -10,12 +10,12 @@ module Data.Hermes
   , char
   , double
   , int
+  , scientific
   , string
   , text
   , isNull
   , mkHermesEnv
   , mkHermesEnv_
-  , getRawJSONString
   , atKey
   , atOptionalKey
   , atOrderedKey
@@ -40,14 +40,17 @@ module Data.Hermes
 
 -- import           Debug.Trace
 
-import           Control.Exception     (Exception, mask_, throwIO)
-import           Control.Monad         ((>=>))
+import           Control.Exception (Exception, mask_, throwIO)
+import           Control.Monad ((>=>))
+import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
 import           Data.ByteString
-import qualified Data.DList            as DList
-import           Data.Maybe            (fromMaybe)
-import           Data.Text             (Text)
-import qualified Data.Text             as T
-import qualified Data.Text.Foreign     as T
+import qualified Data.ByteString.Char8 as BC
+import qualified Data.DList as DList
+import           Data.Maybe (fromMaybe)
+import qualified Data.Scientific as Sci
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Foreign as T
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.ForeignPtr
@@ -129,9 +132,6 @@ foreign import ccall unsafe "find_field" findFieldImpl
   :: Object -> CString -> Value -> ErrPtr -> IO ()
 
 -- Helpers
-foreign import ccall unsafe "get_raw_json_str" getRawJSONStringImpl
-  :: Document -> Ptr CString -> ErrPtr -> IO ()
-
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: ErrPtr -> IO CString
 
@@ -146,10 +146,13 @@ foreign import ccall unsafe "get_double" getDoubleImpl
   :: Value -> Ptr CDouble -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_string" getStringImpl
-  :: Value -> Ptr CString -> Ptr CInt -> ErrPtr -> IO ()
+  :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_bool" getBoolImpl
   :: Value -> Ptr CBool -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
+  :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
 
 data SIMDException = SIMDException String
   deriving (Show, Exception)
@@ -313,6 +316,7 @@ getInt valPtr =
 
 withInt :: (Int -> IO a) -> Value -> IO a
 withInt f = getInt >=> f
+{-# INLINE withInt #-}
 
 getDouble :: Value -> IO Double
 getDouble valPtr =
@@ -325,6 +329,17 @@ getDouble valPtr =
 
 withDouble :: (Double -> IO a) -> Value -> IO a
 withDouble f = getDouble >=> f
+{-# INLINE withDouble #-}
+
+scientific :: Value -> IO Sci.Scientific
+scientific = withRawByteString parseScientific
+{-# INLINE scientific #-}
+
+parseScientific :: BC.ByteString -> IO Sci.Scientific
+parseScientific
+  = either fail pure
+  . A.parseOnly (A.scientific <* A.endOfInput)
+{-# INLINE parseScientific #-}
 
 getBool :: Value -> IO Bool
 getBool valPtr =
@@ -360,11 +375,31 @@ getText :: Value -> IO Text
 getText = fromCStringLen T.peekCStringLen
 {-# INLINE getText #-}
 
+getRawByteString :: Value -> IO BC.ByteString
+getRawByteString valPtr = mask_ $ do
+  strPtr <- malloc
+  alloca $ \lenPtr ->
+    alloca $ \errPtr -> do
+      getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
+      handleError errPtr
+      len <- fromEnum <$> peek lenPtr
+      str <- peek strPtr
+      result <- BC.packCStringLen (str, len)
+      free strPtr
+      pure result
+{-# INLINE getRawByteString #-}
+
+withRawByteString :: (BC.ByteString -> IO a) -> Value -> IO a
+withRawByteString f = getRawByteString >=> f
+{-# INLINE withRawByteString #-}
+
 withString :: (String -> IO a) -> Value -> IO a
 withString f = getString >=> f
+{-# INLINE withString #-}
 
 withText :: (Text -> IO a) -> Value -> IO a
 withText f = getText >=> f
+{-# INLINE withText #-}
 
 isNull :: Value -> IO Bool
 isNull valPtr = toBool <$> isNullImpl valPtr
@@ -411,12 +446,6 @@ iterateOverArray f iterPtr = go DList.empty
           pure $ DList.toList acc
 {-# INLINE iterateOverArray #-}
 
-getRawJSONString :: Document -> IO ByteString
-getRawJSONString docPtr =
-  alloca $ \ptr -> alloca $ \errPtr -> do
-    getRawJSONStringImpl docPtr ptr errPtr
-    peek ptr >>= packCString
-
 -- Public Interface
 
 -- | Find an object field by key, where an exception is thrown
@@ -460,7 +489,7 @@ char = getText >=> justOne
     justOne txt =
       case T.uncons txt of
         Just (c, "") -> pure c
-        _ -> throwIO $ SIMDException "expected a single character"
+        _            -> throwIO $ SIMDException "expected a single character"
 {-# INLINE char #-}
 
 -- | Parse a JSON string into a Haskell String.
@@ -492,8 +521,8 @@ double = getDouble
 
 data HermesEnv =
   HermesEnv
-    { simdParser      :: ForeignPtr SIMDParser
-    , simdDoc         :: ForeignPtr SIMDDocument
+    { simdParser :: ForeignPtr SIMDParser
+    , simdDoc    :: ForeignPtr SIMDDocument
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to

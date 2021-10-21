@@ -1,23 +1,23 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
-import           Control.DeepSeq       (NFData)
-import           Control.Monad         (void)
-import qualified Data.Aeson            as Aeson
-import qualified Data.ByteString       as BS
+import           Control.DeepSeq (NFData)
+import           Control.Monad (void)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import           Data.Functor.Identity (Identity(..))
-import           Data.Scientific       (toRealFloat)
-import           Data.Text             (Text)
-import           GHC.Generics          (Generic)
-import           Test.Tasty            (withResource)
+import           Data.Scientific (Scientific, toRealFloat)
+import           Data.Text (Text)
+import           GHC.Generics (Generic)
+import           Test.Tasty (withResource)
 import           Test.Tasty.Bench
-import qualified Waargonaut.Decode     as D
 import qualified Waargonaut.Attoparsec as WA
+import qualified Waargonaut.Decode as D
 
 import           Data.Hermes
 
@@ -28,34 +28,34 @@ main = defaultMain
     bgroup "Full Decode Persons Array JSON"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (flip decode (list decodePerson) =<< input :: IO [Person])
+          nfIO (flip decode (list decodePerson) =<< input)
       , bench "Hermes DecodeWith" $
           nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Decode Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [Person]))
-      , bench "Waargonaut Decode Attoparsec" $
-          nfIO (void $ WA.decodeAttoparsecByteString (D.list personDecoder) =<< input)
+      -- , bench "Waargonaut Decode Attoparsec" $
+      --     nfIO (void $ WA.decodeAttoparsecByteString (D.list personDecoder) =<< input)
       ]
     , bgroup "Unordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (flip decode (list decodePersonUnordered) =<< input :: IO [PersonUnordered])
+          nfIO (flip decode (list decodePersonUnordered) =<< input)
       , bench "Hermes DecodeWith" $
           nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Decode Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [PersonUnordered]))
-      , bench "Waargonaut Decode Attoparsec" $
-          nfIO (void $ WA.decodeAttoparsecByteString (D.list personUnorderedDecoder) =<< input)
+      -- , bench "Waargonaut Decode Attoparsec" $
+      --     nfIO (void $ WA.decodeAttoparsecByteString (D.list personUnorderedDecoder) =<< input)
       ]
     ]
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Partial Decode Twitter JSON"
     [ bench "Hermes Decode" $
-        nfIO (flip decode decodeTwitter =<< input :: IO Twitter)
+        nfIO (flip decode decodeTwitter =<< input)
     , bench "Hermes DecodeWith" $
         nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
     , bench "Aeson Decode Lazy" $
@@ -85,7 +85,7 @@ data Person =
     , address       :: Text
     , about         :: Text
     , registered    :: Text
-    , latitude      :: Double
+    , latitude      :: Scientific
     , longitude     :: Double
     , tags          :: [Text]
     , friends       :: Identity [Friend]
@@ -112,8 +112,8 @@ decodePerson = withObject $ \obj ->
     <*> atOrderedKey "address" text obj
     <*> atOrderedKey "about" text obj
     <*> atOrderedKey "registered" text obj
-    <*> atOrderedKey "latitude" double obj
-    <*> atOrderedKey "longitude" double obj
+    <*> atOrderedKey "latitude" scientific obj
+    <*> (toRealFloat <$> atOrderedKey "longitude" scientific obj)
     <*> atOrderedKey "tags" (list text) obj
     <*> (Identity <$> atOrderedKey "friends" (list decodeFriend) obj)
     <*> atOrderedKey "greeting" (nullable text) obj
@@ -144,7 +144,7 @@ personDecoder =
     <*> D.atKey "address" D.text
     <*> D.atKey "about" D.text
     <*> D.atKey "registered" D.text
-    <*> (toRealFloat <$> D.atKey "latitude" D.scientific)
+    <*> D.atKey "latitude" D.scientific
     <*> (toRealFloat <$> D.atKey "longitude" D.scientific)
     <*> D.atKey "tags" (D.list D.text)
     <*> (Identity <$> D.atKey "friends" (D.list friendDecoder))

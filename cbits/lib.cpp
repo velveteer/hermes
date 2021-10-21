@@ -140,10 +140,21 @@ extern "C" {
   void get_string(
       ondemand::value &val, 
       const char **out, 
-      int64_t &len, 
+      size_t &len, 
       error_code &error) {
     std::string_view buf;
     val.get_string().tie(buf, error);
+    *out = buf.data();
+    len = buf.length();
+  }
+
+  void get_raw_json_token(
+      ondemand::value &val, 
+      const char **out, 
+      size_t &len, 
+      error_code &error) {
+    std::string_view buf = val.raw_json_token();
+    error = SUCCESS;
     *out = buf.data();
     len = buf.length();
   }
