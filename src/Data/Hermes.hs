@@ -352,19 +352,20 @@ getBool valPtr =
 
 withBool :: (Bool -> IO a) -> Value -> IO a
 withBool f = getBool >=> f
+{-# INLINE withBool #-}
 
 fromCStringLen :: (CStringLen -> IO a) -> Value -> IO a
 fromCStringLen f valPtr = mask_ $ do
-  strPtr <- malloc
+  strPtr <- mallocForeignPtr
   alloca $ \lenPtr ->
-    alloca $ \errPtr -> do
-      getStringImpl valPtr strPtr lenPtr errPtr
-      handleError errPtr
-      len <- fromEnum <$> peek lenPtr
-      str <- peek strPtr
-      result <- f (str, len)
-      free strPtr
-      pure result
+    alloca $ \errPtr ->
+      withForeignPtr strPtr $ \str -> do
+        getStringImpl valPtr str lenPtr errPtr
+        handleError errPtr
+        len <- fromEnum <$> peek lenPtr
+        str' <- peek str
+        result <- f (str', len)
+        pure result
 {-# INLINE fromCStringLen #-}
 
 getString :: Value -> IO String
@@ -377,16 +378,16 @@ getText = fromCStringLen T.peekCStringLen
 
 getRawByteString :: Value -> IO BC.ByteString
 getRawByteString valPtr = mask_ $ do
-  strPtr <- malloc
+  strPtr <- mallocForeignPtr
   alloca $ \lenPtr ->
     alloca $ \errPtr -> do
-      getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
-      handleError errPtr
-      len <- fromEnum <$> peek lenPtr
-      str <- peek strPtr
-      result <- BC.packCStringLen (str, len)
-      free strPtr
-      pure result
+      withForeignPtr strPtr $ \str -> do
+        getRawJSONTokenImpl valPtr str lenPtr errPtr
+        handleError errPtr
+        len <- fromEnum <$> peek lenPtr
+        str' <- peek str
+        result <- BC.packCStringLen (str', len)
+        pure result
 {-# INLINE getRawByteString #-}
 
 withRawByteString :: (BC.ByteString -> IO a) -> Value -> IO a
@@ -571,7 +572,7 @@ _mkSIMDJSONBuffer = mask_ . mallocForeignPtrBytes
 -- The simdjson instances will be out of scope when decode returns, which
 -- means the garbage collector will/should run their finalizers.
 -- This is convenient for users who do not need to hold onto a `HermesEnv` for
--- a long-running application (like a server). There is a small performance penalty
+-- a long-running single-threaded process. There is a small performance penalty
 -- for creating the simdjson instances on each decode.
 decode :: ByteString -> (Value -> IO a) -> IO a
 decode bs p = do
@@ -588,6 +589,8 @@ decode bs p = do
 -- the `HermesEnv` then the simdjson instance finalizers will not be run.
 -- This is useful for long-running applications that want to re-use simdjson instances
 -- for optimal performance.
+-- Do NOT share a `HermesEnv` across multiple threads, but it is fine for each thread
+-- to have its own.
 decodeWith :: HermesEnv -> ByteString -> (Value -> IO a) -> IO a
 decodeWith env bs parser =
   withForeignPtr (simdParser env) $ \parserPtr ->

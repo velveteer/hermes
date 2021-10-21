@@ -202,24 +202,24 @@ data PersonUnordered =
     , longitude     :: Double
     , balance       :: Text
     , email         :: Text
-    , latitude      :: Double
+    , latitude      :: Scientific
     , age           :: Int
     , eyeColor      :: Text
     , index         :: Int
     , guid          :: Text
     , name          :: Text
-    , greeting      :: Text
+    , greeting      :: Maybe Text
     , nonexistent   :: Maybe Text
     , company       :: Text
-    , picture       :: Text
-    , phone         :: Text
+    , picture       :: Maybe Text
+    , phone         :: Identity Text
     , _id           :: Text
     , address       :: Text
     , about         :: Text
     , gender        :: Text
     , registered    :: Text
     , tags          :: [Text]
-    , friends       :: [Friend]
+    , friends       :: Identity [Friend]
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
 decodePersonUnordered :: Value -> IO PersonUnordered
@@ -227,27 +227,27 @@ decodePersonUnordered = withObject $ \obj ->
   PersonUnordered
     <$> atKey "favoriteFruit" text obj
     <*> atKey "isActive" bool obj
-    <*> atKey "longitude" double obj
+    <*> (toRealFloat <$> atKey "longitude" scientific obj)
     <*> atKey "balance" text obj
     <*> atKey "email" text obj
-    <*> atKey "latitude" double obj
+    <*> atKey "latitude" scientific obj
     <*> atKey "age" int obj
     <*> atKey "eyeColor" text obj
     <*> atKey "index" int obj
     <*> atKey "guid" text obj
     <*> atKey "name" text obj
-    <*> atKey "greeting" text obj
+    <*> atKey "greeting" (nullable text) obj
     <*> atOptionalKey "nonexistent" text obj
     <*> atKey "company" text obj
-    <*> atKey "picture" text obj
-    <*> atKey "phone" text obj
+    <*> atKey "picture" (nullable text) obj
+    <*> (Identity <$> atKey "phone" text obj)
     <*> atKey "_id" text obj
     <*> atKey "address" text obj
     <*> atKey "about" text obj
     <*> atKey "gender" text obj
     <*> atKey "registered" text obj
     <*> atKey "tags" (list text) obj
-    <*> atKey "friends" (list decodeFriend) obj
+    <*> (Identity <$> atKey "friends" (list decodeFriend) obj)
 
 personUnorderedDecoder :: Monad f => D.Decoder f PersonUnordered
 personUnorderedDecoder =
@@ -257,24 +257,24 @@ personUnorderedDecoder =
     <*> (toRealFloat <$> D.atKey "longitude" D.scientific)
     <*> D.atKey "balance" D.text
     <*> D.atKey "email" D.text
-    <*> (toRealFloat <$> D.atKey "latitude" D.scientific)
+    <*> D.atKey "latitude" D.scientific
     <*> D.atKey "age" D.int
     <*> D.atKey "eyeColor" D.text
     <*> D.atKey "index" D.int
     <*> D.atKey "guid" D.text
     <*> D.atKey "name" D.text
-    <*> D.atKey "greeting" D.text
+    <*> D.atKey "greeting" (D.maybeOrNull D.text)
     <*> D.atKeyOptional "nonexistent" D.text
     <*> D.atKey "company" D.text
-    <*> D.atKey "picture" D.text
-    <*> D.atKey "phone" D.text
+    <*> D.atKey "picture" (D.maybeOrNull D.text)
+    <*> (Identity <$> D.atKey "phone" D.text)
     <*> D.atKey "_id" D.text
     <*> D.atKey "address" D.text
     <*> D.atKey "about" D.text
     <*> D.atKey "gender" D.text
     <*> D.atKey "registered" D.text
     <*> D.atKey "tags" (D.list D.text)
-    <*> D.atKey "friends" (D.list friendDecoder)
+    <*> (Identity <$> D.atKey "friends" (D.list friendDecoder))
 
 data Twitter =
   Twitter
