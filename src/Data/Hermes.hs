@@ -173,11 +173,9 @@ data HError =
 
 throwSIMD :: String -> Decoder a
 throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
-{-# INLINE throwSIMD #-}
 
 throwInternal :: String -> Decoder a
 throwInternal msg = buildHError msg >>= liftIO . throwIO . InternalException
-{-# INLINE throwInternal #-}
 
 buildHError :: String -> Decoder HError
 buildHError msg = withRunInIO $ \run -> do
@@ -189,7 +187,6 @@ buildHError msg = withRunInIO $ \run -> do
         locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
         debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr strPtr)
         pure $ HError path msg (Prelude.take 100 locStr) debugStr
-{-# INLINE buildHError #-}
 
 handleError :: ErrPtr -> Decoder ()
 handleError errPtr = do
@@ -199,7 +196,6 @@ handleError errPtr = do
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
     throwSIMD errStr
-{-# INLINE handleError #-}
 
 data SIMDErrorCode =
     SUCCESS
@@ -237,19 +233,15 @@ data SIMDErrorCode =
 
 allocaValue :: (Value -> Decoder a) -> Decoder a
 allocaValue f = allocaBytes 24 $ \val -> f (Value val)
-{-# INLINE allocaValue #-}
 
 allocaObject :: (Object -> Decoder a) -> Decoder a
 allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
-{-# INLINE allocaObject #-}
 
 allocaArray :: (Array -> Decoder a) -> Decoder a
 allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
-{-# INLINE allocaArray #-}
 
 allocaArrayIter :: (ArrayIter -> Decoder a) -> Decoder a
 allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
-{-# INLINE allocaArrayIter #-}
 
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
@@ -308,7 +300,6 @@ withObject f valPtr =
     liftIO $ getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     f oPtr
-{-# INLINE withObject #-}
 
 withUnorderedField :: (Value -> Decoder a) -> Object -> String -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
@@ -319,7 +310,6 @@ withUnorderedField f objPtr key = withRunInIO $ \run ->
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
-{-# INLINE withUnorderedField #-}
 
 withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> String -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
@@ -332,11 +322,9 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
-{-# INLINE withUnorderedOptionalField #-}
 
 withPath :: String -> Decoder a -> Decoder a
 withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
-{-# INLINE withPath #-}
 
 withField :: (Value -> Decoder a) -> Object -> String -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
@@ -347,7 +335,6 @@ withField f objPtr key = withRunInIO $ \run ->
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
-{-# INLINE withField #-}
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
@@ -356,11 +343,9 @@ getInt valPtr = withRunInIO $ \run ->
     liftIO $ getIntImpl valPtr ptr errPtr
     handleError errPtr
     fmap fromEnum . liftIO $ peek ptr
-{-# INLINE getInt #-}
 
 withInt :: (Int -> Decoder a) -> Value -> Decoder a
 withInt f = getInt >=> f
-{-# INLINE withInt #-}
 
 getDouble :: Value -> Decoder Double
 getDouble valPtr = withRunInIO $ \run ->
@@ -369,21 +354,17 @@ getDouble valPtr = withRunInIO $ \run ->
     liftIO $ getDoubleImpl valPtr ptr errPtr
     handleError errPtr
     fmap realToFrac . liftIO $ peek ptr
-{-# INLINE getDouble #-}
 
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
-{-# INLINE withDouble #-}
 
 scientific :: Value -> Decoder Sci.Scientific
 scientific = withRawByteString parseScientific
-{-# INLINE scientific #-}
 
 parseScientific :: BC.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> throwInternal $ "failed to parse Scientific: " <> err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
-{-# INLINE parseScientific #-}
 
 getBool :: Value -> Decoder Bool
 getBool valPtr = withRunInIO $ \run ->
@@ -392,11 +373,9 @@ getBool valPtr = withRunInIO $ \run ->
     liftIO $ getBoolImpl valPtr ptr errPtr
     handleError errPtr
     fmap toBool . liftIO $ peek ptr
-{-# INLINE getBool #-}
 
 withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
-{-# INLINE withBool #-}
 
 fromCStringLen :: (CStringLen -> Decoder a) -> Value -> Decoder a
 fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
@@ -408,15 +387,12 @@ fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
     len <- fmap fromEnum . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     f (str, len)
-{-# INLINE fromCStringLen #-}
 
 getString :: Value -> Decoder String
 getString = fromCStringLen (liftIO . peekCStringLen)
-{-# INLINE getString #-}
 
 getText :: Value -> Decoder Text
 getText = fromCStringLen (liftIO . T.peekCStringLen)
-{-# INLINE getText #-}
 
 getRawByteString :: Value -> Decoder BC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
@@ -428,23 +404,18 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     len <- fmap fromEnum . liftIO $ peek lenPtr
     str' <- liftIO $ peek strPtr
     liftIO $ BC.packCStringLen (str', len)
-{-# INLINE getRawByteString #-}
 
 withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
 withRawByteString f = getRawByteString >=> f
-{-# INLINE withRawByteString #-}
 
 withString :: (String -> Decoder a) -> Value -> Decoder a
 withString f = getString >=> f
-{-# INLINE withString #-}
 
 withText :: (Text -> Decoder a) -> Value -> Decoder a
 withText f = getText >=> f
-{-# INLINE withText #-}
 
 isNull :: Value -> Decoder Bool
 isNull valPtr = fmap toBool . liftIO $ isNullImpl valPtr
-{-# INLINE isNull #-}
 
 withArray :: (Array -> Decoder a) -> Value -> Decoder a
 withArray f val = withRunInIO $ \run ->
@@ -454,7 +425,6 @@ withArray f val = withRunInIO $ \run ->
     liftIO $ getArrayFromValueImpl val arrPtr errPtr
     handleError errPtr
     f arrPtr
-{-# INLINE withArray #-}
 
 withArrayIter :: (ArrayIter -> Decoder a) -> Array -> Decoder a
 withArrayIter f arrPtr = withRunInIO $ \run ->
@@ -464,7 +434,6 @@ withArrayIter f arrPtr = withRunInIO $ \run ->
     liftIO $ getArrayIterImpl arrPtr iterPtr errPtr
     handleError errPtr
     f iterPtr
-{-# INLINE withArrayIter #-}
 
 iterateOverArray :: (Value -> Decoder a) -> ArrayIter -> Decoder [a]
 iterateOverArray f iterPtr = go DList.empty
@@ -485,32 +454,27 @@ iterateOverArray f iterPtr = go DList.empty
             go (acc <> DList.singleton result)
         else
           pure $ DList.toList acc
-{-# INLINE iterateOverArray #-}
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
 atKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
 atKey key parser obj = withUnorderedField parser obj key
-{-# INLINE atKey #-}
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
 atOptionalKey :: String -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
 atOptionalKey key parser obj = withUnorderedOptionalField parser obj key
-{-# INLINE atOptionalKey #-}
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
 atOrderedKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
 atOrderedKey key parser obj = withField parser obj key
-{-# INLINE atOrderedKey #-}
 
 -- | Parse a homogenous JSON array into a Haskell list.
 list :: (Value -> Decoder a) -> Value -> Decoder [a]
 list f val =
   flip withArray val $ \arr ->
   flip withArrayIter arr $ iterateOverArray f
-{-# INLINE list #-}
 
 -- | Transforms a parser to return Nothing when the value is null.
 nullable :: (Value -> Decoder a) -> Value -> Decoder (Maybe a)
@@ -519,7 +483,6 @@ nullable parser val = do
   if nil
     then pure Nothing
     else Just <$> parser val
-{-# INLINE nullable #-}
 
 -- | Parse only a single character. TODO Unbounded versus bounded?
 char :: Value -> Decoder Char
@@ -531,32 +494,26 @@ char = getText >=> justOne
           pure c
         _ ->
           throwInternal "expected a single character"
-{-# INLINE char #-}
 
 -- | Parse a JSON string into a Haskell String.
 string :: Value -> Decoder String
 string = getString
-{-# INLINE string #-}
 
 -- | Parse a JSON string into Haskell Text.
 text :: Value -> Decoder Text
 text = getText
-{-# INLINE text #-}
 
 -- | Parse a JSON number into an unsigned Haskell Int.
 int :: Value -> Decoder Int
 int = getInt
-{-# INLINE int #-}
 
 -- | Parse a JSON boolean into a Haskell Bool.
 bool :: Value -> Decoder Bool
 bool = getBool
-{-# INLINE bool #-}
 
 -- | Parse a JSON number into a Haskell Double.
 double :: Value -> Decoder Double
 double = getDouble
-{-# INLINE double #-}
 
 -- Decoding Types and Functions
 
