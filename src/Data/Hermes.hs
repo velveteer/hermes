@@ -28,7 +28,10 @@ module Data.Hermes
   , withObject
   , withString
   , withText
+  , Decoder
   , HermesEnv
+  , HermesException(..)
+  , HError(..)
   , Value
   , Object
   , Array
@@ -40,8 +43,10 @@ module Data.Hermes
 
 -- import           Debug.Trace
 
-import           Control.Exception (Exception, mask_, throwIO)
 import           Control.Monad ((>=>))
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.IO.Unlift (withRunInIO)
+import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
 import           Data.ByteString
 import qualified Data.ByteString.Char8 as BC
@@ -51,19 +56,13 @@ import qualified Data.Scientific as Sci
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Foreign as T
-import           Foreign.C.String
-import           Foreign.C.Types
-import           Foreign.ForeignPtr
-import           Foreign.Marshal.Alloc
-import           Foreign.Marshal.Utils
-import           Foreign.Ptr
-import           Foreign.Storable
+import           UnliftIO.Exception
+import           UnliftIO.Foreign hiding (allocaArray, withArray)
 
 -- Opaque SIMD Types
 data SIMDParser
 data SIMDDocument
 data PaddedString
-data PaddedStringView
 type ErrPtr = Ptr CInt
 
 -- Opaque JSON Types
@@ -91,18 +90,9 @@ foreign import ccall unsafe "make_input" makeInputImpl
 foreign import ccall unsafe "&delete_input" deleteInputImpl
   :: FunPtr (Ptr PaddedString -> IO ())
 
-foreign import ccall unsafe "make_input_view" makeInputViewImpl
-  :: CString -> CSize -> CSize -> IO (Ptr PaddedStringView)
-
-foreign import ccall unsafe "&delete_input_view" deleteInputViewImpl
-  :: FunPtr (Ptr PaddedStringView -> IO ())
-
 -- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
   :: Parser -> InputBuffer -> Document -> ErrPtr -> IO ()
-
-foreign import ccall unsafe "get_iterator_from_view" getIteratorFromViewImpl
-  :: Parser -> InputView -> Document -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
   :: Document -> Value -> ErrPtr -> IO ()
@@ -135,6 +125,12 @@ foreign import ccall unsafe "find_field" findFieldImpl
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: ErrPtr -> IO CString
 
+foreign import ccall unsafe "current_location" currentLocationImpl
+  :: Document -> Ptr CString -> ErrPtr -> IO CString
+
+foreign import ccall unsafe "to_debug_string" toDebugStringImpl
+  :: Document -> IO CString
+
 foreign import ccall unsafe "is_null" isNullImpl
   :: Value -> IO CBool
 
@@ -154,8 +150,39 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
 
-data SIMDException = SIMDException String
+data HermesException =
+    SIMDException HError
+  | InternalException HError
   deriving (Show, Exception)
+
+data HError =
+  HError
+    { hPtr        :: !String
+    -- ^ The path to the current element determined by the decoder.
+    , errorMsg    :: !String
+    -- ^ An error message.
+    , docLocation :: !String
+    -- ^ Truncated location of the simdjson document iterator.
+    , docDebug    :: !String
+    -- ^ Debug information from simdjson::document.
+    } deriving Show
+
+throwSIMD :: String -> String -> String -> String -> IO a
+throwSIMD ptr msg loc debug =
+  throwIO . SIMDException $ HError ptr msg loc debug
+
+throwInternal :: String -> Decoder a
+throwInternal msg = withRunInIO $ \run -> do
+  docPtr <- run $ asks hDocument
+  pointer <- run $ asks hPointer
+  alloca $ \errPtr -> run $
+    alloca $ \strPtr -> do
+      locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
+      debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr)
+      liftIO
+        . throwIO
+        . InternalException
+        $ HError pointer msg (Prelude.take 100 locStr) debugStr
 
 data SIMDErrorCode =
     SUCCESS
@@ -191,26 +218,31 @@ data SIMDErrorCode =
   | NUM_ERROR_CODES
   deriving (Eq, Show, Bounded, Enum)
 
-allocaValue :: (Value -> IO a) -> IO a
+allocaValue :: (Value -> Decoder a) -> Decoder a
 allocaValue f = allocaBytes 24 $ \val -> f (Value val)
 
-allocaObject :: (Object -> IO a) -> IO a
+allocaObject :: (Object -> Decoder a) -> Decoder a
 allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
 
-allocaArray :: (Array -> IO a) -> IO a
+allocaArray :: (Array -> Decoder a) -> Decoder a
 allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
 
-allocaArrayIter :: (ArrayIter -> IO a) -> IO a
+allocaArrayIter :: (ArrayIter -> Decoder a) -> Decoder a
 allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
 
-handleError :: ErrPtr -> IO ()
+handleError :: ErrPtr -> Decoder ()
 handleError errPtr = do
-  errCode <- toEnum . fromEnum <$> peek errPtr
+  docPtr <- asks hDocument
+  pointer <- asks hPointer
+  errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
   if errCode == SUCCESS
   then pure ()
-  else do
+  else liftIO $ do
     errStr <- peekCString =<< getErrorMessageImpl errPtr
-    throwIO . SIMDException $ errStr
+    alloca $ \strPtr -> do
+      locStr <- peekCString =<< currentLocationImpl docPtr strPtr errPtr
+      debugStr <- peekCString =<< toDebugStringImpl docPtr
+      throwSIMD pointer errStr (Prelude.take 100 locStr) debugStr
 
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
@@ -220,9 +252,6 @@ newtype Document = Document (Ptr SIMDDocument)
 
 -- | A reference to an opaque simdjson::padded_string.
 newtype InputBuffer = InputBuffer (Ptr PaddedString)
-
--- | A reference to an opaque simdjson::padded_string_view.
-newtype InputView = InputView (Ptr PaddedStringView)
 
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
@@ -236,246 +265,245 @@ newtype Array = Array (Ptr JSONArray)
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 
-withDocument :: (Value -> IO a) -> Parser -> Document -> InputBuffer -> IO a
+type Decoder a = ReaderT HermesState IO a
+
+data HermesState =
+  HermesState
+    { hDocument :: !Document
+    , hPointer  :: !String
+    }
+
+mkHermesState :: Document -> HermesState
+mkHermesState doc = HermesState doc mempty
+
+withDocument :: (Value -> Decoder a) -> Parser -> Document -> InputBuffer -> Decoder a
 withDocument f parserPtr docPtr inputPtr =
-  allocaValue $ \valPtr ->
-  alloca $ \errPtr -> do
+  allocaValue $ \valPtr -> withRunInIO $ \run ->
+  alloca $ \errPtr -> run $ do
     -- traceM "getIterator"
-    getIterator parserPtr inputPtr docPtr errPtr
+    liftIO $ getIterator parserPtr inputPtr docPtr errPtr
     handleError errPtr
     -- traceM "getDocumentValue"
-    getDocumentValueImpl docPtr valPtr errPtr
+    liftIO $ getDocumentValueImpl docPtr valPtr errPtr
     handleError errPtr
     f valPtr
 
-_withDocumentView :: (Value -> IO a) -> Parser -> Document -> InputView -> IO a
-_withDocumentView f parserPtr docPtr inputPtr =
-  allocaValue $ \valPtr ->
-  alloca $ \errPtr -> do
-    -- traceM "getIterator"
-    getIteratorFromViewImpl parserPtr inputPtr docPtr errPtr
-    handleError errPtr
-    -- traceM "getDocumentValue"
-    getDocumentValueImpl docPtr valPtr errPtr
-    handleError errPtr
-    f valPtr
-
-withObject :: (Object -> IO a) -> Value -> IO a
+withObject :: (Object -> Decoder a) -> Value -> Decoder a
 withObject f valPtr =
-  allocaObject $ \oPtr ->
-  alloca $ \errPtr -> do
+  allocaObject $ \oPtr -> withRunInIO $ \run ->
+  alloca $ \errPtr -> run $ do
     -- traceM "withObject"
-    getObjectFromValueImpl valPtr oPtr errPtr
+    liftIO $ getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     f oPtr
 {-# INLINE withObject #-}
 
-withUnorderedField :: (Value -> IO a) -> Object -> String -> IO a
-withUnorderedField f objPtr key =
-  withCString key $ \cstr ->
+withUnorderedField :: (Value -> Decoder a) -> Object -> String -> Decoder a
+withUnorderedField f objPtr key = withRunInIO $ \run ->
+  withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
-  alloca $ \errPtr -> do
+  alloca $ \errPtr -> withPath key $ do
     -- traceM $ "withUnorderedField " <> key
-    findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
 {-# INLINE withUnorderedField #-}
 
-withUnorderedOptionalField :: (Value -> IO a) -> Object -> String -> IO (Maybe a)
-withUnorderedOptionalField f objPtr key =
-  withCString key $ \cstr ->
+withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> String -> Decoder (Maybe a)
+withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
+  withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
-  alloca $ \errPtr -> do
+  alloca $ \errPtr -> withPath key $ do
     -- traceM $ "withUnorderedOptionalField " <> key
-    findFieldUnorderedImpl objPtr cstr vPtr errPtr
-    errCode <- toEnum . fromEnum <$> peek errPtr
+    liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    errCode <- toEnum . fromEnum <$> (liftIO $ peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
 {-# INLINE withUnorderedOptionalField #-}
 
-withField :: (Value -> IO a) -> Object -> String -> IO a
-withField f objPtr key =
-  withCString key $ \cstr ->
+withPath :: String -> Decoder a -> Decoder a
+withPath key = local (\st -> st { hPointer = hPointer st <> "." <> key })
+{-# INLINE withPath #-}
+
+withField :: (Value -> Decoder a) -> Object -> String -> Decoder a
+withField f objPtr key = withRunInIO $ \run ->
+  withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
-  alloca $ \errPtr -> do
+    alloca $ \errPtr -> withPath key $ do
     -- traceM $ "withField " <> key
-    findFieldImpl objPtr cstr vPtr errPtr
+    liftIO $ findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
 {-# INLINE withField #-}
 
-getInt :: Value -> IO Int
-getInt valPtr =
-  alloca $ \ptr -> alloca $ \errPtr -> do
+getInt :: Value -> Decoder Int
+getInt valPtr = withRunInIO $ \run ->
+  alloca $ \ptr -> run $ alloca $ \errPtr -> do
     -- traceM "getInt"
-    getIntImpl valPtr ptr errPtr
+    liftIO $ getIntImpl valPtr ptr errPtr
     handleError errPtr
-    fromEnum <$> peek ptr
+    fmap fromEnum . liftIO $ peek ptr
 {-# INLINE getInt #-}
 
-withInt :: (Int -> IO a) -> Value -> IO a
+withInt :: (Int -> Decoder a) -> Value -> Decoder a
 withInt f = getInt >=> f
 {-# INLINE withInt #-}
 
-getDouble :: Value -> IO Double
-getDouble valPtr =
-  alloca $ \ptr -> alloca $ \errPtr -> do
+getDouble :: Value -> Decoder Double
+getDouble valPtr = withRunInIO $ \run ->
+  alloca $ \ptr -> run $ alloca $ \errPtr -> do
     -- traceM "getDouble"
-    getDoubleImpl valPtr ptr errPtr
+    liftIO $ getDoubleImpl valPtr ptr errPtr
     handleError errPtr
-    realToFrac <$> peek ptr
+    fmap realToFrac . liftIO $ peek ptr
 {-# INLINE getDouble #-}
 
-withDouble :: (Double -> IO a) -> Value -> IO a
+withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
 {-# INLINE withDouble #-}
 
-scientific :: Value -> IO Sci.Scientific
+scientific :: Value -> Decoder Sci.Scientific
 scientific = withRawByteString parseScientific
 {-# INLINE scientific #-}
 
-parseScientific :: BC.ByteString -> IO Sci.Scientific
+parseScientific :: BC.ByteString -> Decoder Sci.Scientific
 parseScientific
-  = either fail pure
+  = either (\err -> throwInternal $ "failed to parse Scientific: " <> err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
 {-# INLINE parseScientific #-}
 
-getBool :: Value -> IO Bool
-getBool valPtr =
-  alloca $ \ptr -> alloca $ \errPtr -> do
+getBool :: Value -> Decoder Bool
+getBool valPtr = withRunInIO $ \run ->
+  alloca $ \ptr -> run $ alloca $ \errPtr -> do
     -- traceM "getBool"
-    getBoolImpl valPtr ptr errPtr
+    liftIO $ getBoolImpl valPtr ptr errPtr
     handleError errPtr
-    toBool <$> peek ptr
+    fmap toBool . liftIO $ peek ptr
 {-# INLINE getBool #-}
 
-withBool :: (Bool -> IO a) -> Value -> IO a
+withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
 {-# INLINE withBool #-}
 
-fromCStringLen :: (CStringLen -> IO a) -> Value -> IO a
-fromCStringLen f valPtr = mask_ $ do
-  strPtr <- mallocForeignPtr
-  alloca $ \lenPtr ->
-    alloca $ \errPtr ->
-      withForeignPtr strPtr $ \str -> do
-        getStringImpl valPtr str lenPtr errPtr
-        handleError errPtr
-        len <- fromEnum <$> peek lenPtr
-        str' <- peek str
-        result <- f (str', len)
-        pure result
+fromCStringLen :: (CStringLen -> Decoder a) -> Value -> Decoder a
+fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
+  alloca $ \strPtr ->
+  alloca $ \lenPtr -> run $
+  alloca $ \errPtr -> do
+    liftIO $ getStringImpl valPtr strPtr lenPtr errPtr
+    handleError errPtr
+    len <- fmap fromEnum . liftIO $ peek lenPtr
+    str <- liftIO $ peek strPtr
+    result <- f (str, len)
+    pure result
 {-# INLINE fromCStringLen #-}
 
-getString :: Value -> IO String
-getString = fromCStringLen peekCStringLen
+getString :: Value -> Decoder String
+getString = fromCStringLen (liftIO . peekCStringLen)
 {-# INLINE getString #-}
 
-getText :: Value -> IO Text
-getText = fromCStringLen T.peekCStringLen
+getText :: Value -> Decoder Text
+getText = fromCStringLen (liftIO . T.peekCStringLen)
 {-# INLINE getText #-}
 
-getRawByteString :: Value -> IO BC.ByteString
-getRawByteString valPtr = mask_ $ do
-  strPtr <- mallocForeignPtr
-  alloca $ \lenPtr ->
-    alloca $ \errPtr -> do
-      withForeignPtr strPtr $ \str -> do
-        getRawJSONTokenImpl valPtr str lenPtr errPtr
-        handleError errPtr
-        len <- fromEnum <$> peek lenPtr
-        str' <- peek str
-        result <- BC.packCStringLen (str', len)
-        pure result
+getRawByteString :: Value -> Decoder BC.ByteString
+getRawByteString valPtr = withRunInIO $ \run -> mask_ $
+  alloca $ \strPtr ->
+  alloca $ \lenPtr -> run $
+  alloca $ \errPtr -> do
+    liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
+    handleError errPtr
+    len <- fmap fromEnum . liftIO $ peek lenPtr
+    str' <- liftIO $ peek strPtr
+    result <- liftIO $ BC.packCStringLen (str', len)
+    pure result
 {-# INLINE getRawByteString #-}
 
-withRawByteString :: (BC.ByteString -> IO a) -> Value -> IO a
+withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
 withRawByteString f = getRawByteString >=> f
 {-# INLINE withRawByteString #-}
 
-withString :: (String -> IO a) -> Value -> IO a
+withString :: (String -> Decoder a) -> Value -> Decoder a
 withString f = getString >=> f
 {-# INLINE withString #-}
 
-withText :: (Text -> IO a) -> Value -> IO a
+withText :: (Text -> Decoder a) -> Value -> Decoder a
 withText f = getText >=> f
 {-# INLINE withText #-}
 
-isNull :: Value -> IO Bool
-isNull valPtr = toBool <$> isNullImpl valPtr
+isNull :: Value -> Decoder Bool
+isNull valPtr = fmap toBool . liftIO $ isNullImpl valPtr
 {-# INLINE isNull #-}
 
-withArray :: (Array -> IO a) -> Value -> IO a
-withArray f val =
-  alloca $ \errPtr ->
+withArray :: (Array -> Decoder a) -> Value -> Decoder a
+withArray f val = withRunInIO $ \run ->
+  alloca $ \errPtr -> run $
   allocaArray $ \arrPtr -> do
     -- traceM "withArray"
-    getArrayFromValueImpl val arrPtr errPtr
+    liftIO $ getArrayFromValueImpl val arrPtr errPtr
     handleError errPtr
     f arrPtr
 {-# INLINE withArray #-}
 
-withArrayIter :: (ArrayIter -> IO a) -> Array -> IO a
-withArrayIter f arrPtr =
-  alloca $ \errPtr ->
+withArrayIter :: (ArrayIter -> Decoder a) -> Array -> Decoder a
+withArrayIter f arrPtr = withRunInIO $ \run ->
+  alloca $ \errPtr -> run $
   allocaArrayIter $ \iterPtr -> do
     -- traceM "withArrayIter"
-    getArrayIterImpl arrPtr iterPtr errPtr
+    liftIO $ getArrayIterImpl arrPtr iterPtr errPtr
     handleError errPtr
     f iterPtr
 {-# INLINE withArrayIter #-}
 
-iterateOverArray :: (Value -> IO a) -> ArrayIter -> IO [a]
+iterateOverArray :: (Value -> Decoder a) -> ArrayIter -> Decoder [a]
 iterateOverArray f iterPtr = go DList.empty
   where
-    go acc = do
+    go acc = withRunInIO $ \runInIO -> do
       -- traceM "arrIterIsDone"
-      isOver <- toBool <$> arrayIterIsDoneImpl iterPtr
+      isOver <- fmap toBool $ arrayIterIsDoneImpl iterPtr
       if not isOver
         then
-          alloca $ \errPtr ->
+          alloca $ \errPtr -> runInIO $
           allocaValue $ \valPtr -> do
             -- traceM "arrayIterGetCurrent"
-            arrayIterGetCurrentImpl iterPtr valPtr errPtr
+            liftIO $ arrayIterGetCurrentImpl iterPtr valPtr errPtr
             handleError errPtr
             result <- f valPtr
             -- traceM "arrayIterMoveNext"
-            arrayIterMoveNextImpl iterPtr
+            liftIO $ arrayIterMoveNextImpl iterPtr
             go (acc <> DList.singleton result)
         else
           pure $ DList.toList acc
 {-# INLINE iterateOverArray #-}
 
--- Public Interface
-
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
-atKey :: String -> (Value -> IO a) -> Object -> IO a
+atKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
 atKey key parser obj = withUnorderedField parser obj key
 {-# INLINE atKey #-}
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
-atOptionalKey :: String -> (Value -> IO a) -> Object -> IO (Maybe a)
+atOptionalKey :: String -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
 atOptionalKey key parser obj = withUnorderedOptionalField parser obj key
 {-# INLINE atOptionalKey #-}
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
-atOrderedKey :: String -> (Value -> IO a) -> Object -> IO a
+atOrderedKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
 atOrderedKey key parser obj = withField parser obj key
 {-# INLINE atOrderedKey #-}
 
 -- | Parse a homogenous JSON array into a Haskell list.
-list :: (Value -> IO a) -> Value -> IO [a]
+list :: (Value -> Decoder a) -> Value -> Decoder [a]
 list f val =
   flip withArray val $ \arr ->
   flip withArrayIter arr $ iterateOverArray f
 {-# INLINE list #-}
 
 -- | Transforms a parser to return Nothing when the value is null.
-nullable :: (Value -> IO a) -> Value -> IO (Maybe a)
+nullable :: (Value -> Decoder a) -> Value -> Decoder (Maybe a)
 nullable parser val = do
   nil <- isNull val
   if nil
@@ -484,37 +512,39 @@ nullable parser val = do
 {-# INLINE nullable #-}
 
 -- | Parse only a single character. TODO Unbounded versus bounded?
-char :: Value -> IO Char
+char :: Value -> Decoder Char
 char = getText >=> justOne
   where
     justOne txt =
       case T.uncons txt of
-        Just (c, "") -> pure c
-        _            -> throwIO $ SIMDException "expected a single character"
+        Just (c, "") ->
+          pure c
+        _ ->
+          throwInternal "expected a single character"
 {-# INLINE char #-}
 
 -- | Parse a JSON string into a Haskell String.
-string :: Value -> IO String
+string :: Value -> Decoder String
 string = getString
 {-# INLINE string #-}
 
 -- | Parse a JSON string into Haskell Text.
-text :: Value -> IO Text
+text :: Value -> Decoder Text
 text = getText
 {-# INLINE text #-}
 
 -- | Parse a JSON number into an unsigned Haskell Int.
-int :: Value -> IO Int
+int :: Value -> Decoder Int
 int = getInt
 {-# INLINE int #-}
 
 -- | Parse a JSON boolean into a Haskell Bool.
-bool :: Value -> IO Bool
+bool :: Value -> Decoder Bool
 bool = getBool
 {-# INLINE bool #-}
 
 -- | Parse a JSON number into a Haskell Double.
-double :: Value -> IO Double
+double :: Value -> Decoder Double
 double = getDouble
 {-# INLINE double #-}
 
@@ -522,8 +552,8 @@ double = getDouble
 
 data HermesEnv =
   HermesEnv
-    { simdParser :: ForeignPtr SIMDParser
-    , simdDoc    :: ForeignPtr SIMDDocument
+    { simdParser :: !(ForeignPtr SIMDParser)
+    , simdDoc    :: !(ForeignPtr SIMDDocument)
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to
@@ -560,21 +590,13 @@ mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
   ptr <- makeInputImpl cstr (toEnum len)
   newForeignPtr deleteInputImpl ptr
 
-_mkSIMDPaddedStrView :: CString -> Int -> Int -> IO (ForeignPtr PaddedStringView)
-_mkSIMDPaddedStrView buf len cap = mask_ $ do
-  ptr <- makeInputViewImpl buf (toEnum len) (toEnum cap)
-  newForeignPtr deleteInputViewImpl ptr
-
-_mkSIMDJSONBuffer :: Int -> IO (ForeignPtr CString)
-_mkSIMDJSONBuffer = mask_ . mallocForeignPtrBytes
-
 -- | Construct an ephemeral `HermesEnv` and use it to decode the input.
 -- The simdjson instances will be out of scope when decode returns, which
 -- means the garbage collector will/should run their finalizers.
 -- This is convenient for users who do not need to hold onto a `HermesEnv` for
 -- a long-running single-threaded process. There is a small performance penalty
 -- for creating the simdjson instances on each decode.
-decode :: ByteString -> (Value -> IO a) -> IO a
+decode :: ByteString -> (Value -> Decoder a) -> IO a
 decode bs p = do
   parser   <- mkSIMDParser Nothing
   document <- mkSIMDDocument
@@ -582,7 +604,7 @@ decode bs p = do
   withForeignPtr parser $ \parserPtr ->
     withForeignPtr document $ \docPtr ->
       withForeignPtr input $ \inputPtr ->
-        withDocument p
+      flip runReaderT (mkHermesState (Document docPtr)) $ withDocument p
           (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr)
 
 -- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
@@ -591,11 +613,11 @@ decode bs p = do
 -- for optimal performance.
 -- Do NOT share a `HermesEnv` across multiple threads, but it is fine for each thread
 -- to have its own.
-decodeWith :: HermesEnv -> ByteString -> (Value -> IO a) -> IO a
+decodeWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> IO a
 decodeWith env bs parser =
   withForeignPtr (simdParser env) $ \parserPtr ->
   withForeignPtr (simdDoc env) $ \docPtr -> do
     paddedStr <- mkSIMDPaddedStr bs
     withForeignPtr paddedStr $ \paddedStrPtr ->
-      withDocument parser
+      flip runReaderT (mkHermesState (Document docPtr)) $ withDocument parser
         (Parser parserPtr) (Document docPtr) (InputBuffer paddedStrPtr)

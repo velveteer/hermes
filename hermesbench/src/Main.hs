@@ -93,7 +93,7 @@ data Person =
     , favoriteFruit :: Text
     } deriving (Show, Generic, NFData)
 
-decodePerson :: Value -> IO Person
+decodePerson :: Value -> Decoder Person
 decodePerson = withObject $ \obj ->
   Person
     <$> atOrderedKey "_id" text obj
@@ -119,7 +119,7 @@ decodePerson = withObject $ \obj ->
     <*> atOrderedKey "greeting" (nullable text) obj
     <*> atOrderedKey "favoriteFruit" text obj
 
-decodeFriend :: Value -> IO Friend
+decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->
   Friend
     <$> atOrderedKey "id" int obj
@@ -222,7 +222,7 @@ data PersonUnordered =
     , friends       :: Identity [Friend]
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-decodePersonUnordered :: Value -> IO PersonUnordered
+decodePersonUnordered :: Value -> Decoder PersonUnordered
 decodePersonUnordered = withObject $ \obj ->
   PersonUnordered
     <$> atKey "favoriteFruit" text obj
@@ -297,12 +297,12 @@ data User =
     , url         :: Maybe Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
 
-decodeTwitter :: Value -> IO Twitter
+decodeTwitter :: Value -> Decoder Twitter
 decodeTwitter = withObject $ \obj ->
   Twitter
     <$> atKey "statuses" (list decodeStatus) obj
 
-decodeStatus :: Value -> IO Status
+decodeStatus :: Value -> Decoder Status
 decodeStatus = withObject $ \obj -> do
   u <- atKey "user" decodeUser obj
   md <- atKey "metadata" pure obj
@@ -311,7 +311,7 @@ decodeStatus = withObject $ \obj -> do
     iso <- atKey "iso_language_code" text m
     pure $ Status u result iso
 
-decodeUser :: Value -> IO User
+decodeUser :: Value -> Decoder User
 decodeUser = withObject $ \obj ->
   User
     <$> atOrderedKey "screen_name" text obj

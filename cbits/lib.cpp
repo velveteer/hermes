@@ -51,10 +51,6 @@ extern "C" {
     parser.iterate(input).tie(out, error);
   }
 
-  const char *get_error_message(error_code &error) {
-    return error_message(error);
-  }
-
   void get_raw_json_str(
       ondemand::document &doc, 
       std::string_view &out, 
@@ -174,5 +170,22 @@ extern "C" {
   bool is_null(ondemand::value &val) {
     return val.is_null();
   }
+
+  const char *current_location(
+      ondemand::document &doc, 
+      const char **loc, 
+      error_code &error) {
+    doc.current_location().tie(*loc, error);
+    return *loc;
+  }
+
+  const char *to_debug_string(ondemand::document &doc) {
+    return doc.to_debug_string().data();
+  }
+
+  const char *get_error_message(error_code &error) {
+    return error_message(error);
+  }
+
 
 }
