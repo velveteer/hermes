@@ -129,7 +129,7 @@ foreign import ccall unsafe "current_location" currentLocationImpl
   :: Document -> Ptr CString -> ErrPtr -> IO CString
 
 foreign import ccall unsafe "to_debug_string" toDebugStringImpl
-  :: Document -> IO CString
+  :: Document -> Ptr CString -> IO CString
 
 foreign import ccall unsafe "is_null" isNullImpl
   :: Value -> IO CBool
@@ -178,7 +178,7 @@ throwInternal msg = withRunInIO $ \run -> do
   alloca $ \errPtr -> run $
     alloca $ \strPtr -> do
       locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
-      debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr)
+      debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr strPtr)
       liftIO
         . throwIO
         . InternalException
@@ -241,7 +241,7 @@ handleError errPtr = do
     errStr <- peekCString =<< getErrorMessageImpl errPtr
     alloca $ \strPtr -> do
       locStr <- peekCString =<< currentLocationImpl docPtr strPtr errPtr
-      debugStr <- peekCString =<< toDebugStringImpl docPtr
+      debugStr <- peekCString =<< toDebugStringImpl docPtr strPtr
       throwSIMD pointer errStr (Prelude.take 100 locStr) debugStr
 
 -- | A reference to an opaque simdjson::ondemand::parser.

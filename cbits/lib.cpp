@@ -179,8 +179,9 @@ extern "C" {
     return *loc;
   }
 
-  const char *to_debug_string(ondemand::document &doc) {
-    return doc.to_debug_string().data();
+  const char *to_debug_string(ondemand::document &doc, const char **out) {
+    *out = doc.to_debug_string().data();
+    return *out;
   }
 
   const char *get_error_message(error_code &error) {
