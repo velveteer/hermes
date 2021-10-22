@@ -1,11 +1,24 @@
+{-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+{- | Exposes functions for building JSON decoders that harness the power
+of the simdjson::ondemand API.
+-}
+
 module Data.Hermes
-  ( decode
+  ( -- * Decoding from ByteString input
+    Decoder
+  , HermesEnv
+  , decode
   , decodeWith
+  -- * Object field accessors
+  , atKey
+  , atOptionalKey
+  , atOrderedKey
+    -- * Value decoders
   , bool
   , char
   , double
@@ -13,14 +26,16 @@ module Data.Hermes
   , scientific
   , string
   , text
-  , isNull
-  , mkHermesEnv
-  , mkHermesEnv_
-  , atKey
-  , atOptionalKey
-  , atOrderedKey
   , list
   , nullable
+  -- * Environment creation
+  , mkHermesEnv
+  , mkHermesEnv_
+  -- * Error Types
+  , HermesException(..)
+  , HError(..)
+  -- * Value helpers
+  , isNull
   , withArray
   , withBool
   , withDouble
@@ -28,10 +43,7 @@ module Data.Hermes
   , withObject
   , withString
   , withText
-  , Decoder
-  , HermesEnv
-  , HermesException(..)
-  , HError(..)
+  -- * simdjson Types
   , Value
   , Object
   , Array
@@ -59,16 +71,24 @@ import qualified Data.Text.Foreign as T
 import           UnliftIO.Exception
 import           UnliftIO.Foreign hiding (allocaArray, withArray)
 
--- Opaque SIMD Types
+-- | Phantom type for a pointer to simdjson::ondemand::parser.
 data SIMDParser
+-- | Phantom type for a pointer to simdjson::ondemand::document.
 data SIMDDocument
+-- | Phantom type for a pointer to simdjson::padded_string.
 data PaddedString
+
+-- | Alias for a pointer to the simdjson::error_code that most functions use
+-- to report errors back to us.
 type ErrPtr = Ptr CInt
 
--- Opaque JSON Types
+-- | Phantom type for a pointer to simdjson::ondemand::value.
 data JSONValue
+-- | Phantom type for a pointer to simdjson::ondemand::object.
 data JSONObject
+-- | Phantom type for a pointer to simdjson::ondemand::array.
 data JSONArray
+-- | Phantom type for a pointer to simdjson::ondemand::array_iterator
 data JSONArrayIter
 
 -- Constructor/destructors
@@ -150,8 +170,8 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
 
--- | Error Handling
-
+-- | The library can throw exceptions from simdjson in addition to
+-- its own exceptions.
 data HermesException =
     SIMDException HError
     -- ^ An exception thrown from the simdjson library.
@@ -159,6 +179,7 @@ data HermesException =
     -- ^ An exception thrown from an internal library function.
   deriving (Show, Exception)
 
+-- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
   HError
     { hPtr        :: !String
@@ -292,6 +313,7 @@ withDocument f inputPtr =
         handleError errPtr
         f valPtr
 
+-- | Helper to work with an Object parsed from a Value.
 withObject :: (Object -> Decoder a) -> Value -> Decoder a
 withObject f valPtr =
   allocaObject $ \oPtr -> withRunInIO $ \run ->
@@ -323,9 +345,6 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
 
-withPath :: String -> Decoder a -> Decoder a
-withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
-
 withField :: (Value -> Decoder a) -> Object -> String -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
   withCString key $ \cstr -> run $
@@ -336,6 +355,9 @@ withField f objPtr key = withRunInIO $ \run ->
     handleError errPtr
     f vPtr
 
+withPath :: String -> Decoder a -> Decoder a
+withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
+
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
@@ -344,6 +366,7 @@ getInt valPtr = withRunInIO $ \run ->
     handleError errPtr
     fmap fromEnum . liftIO $ peek ptr
 
+-- | Helper to work with an Int parsed from a Value.
 withInt :: (Int -> Decoder a) -> Value -> Decoder a
 withInt f = getInt >=> f
 
@@ -355,12 +378,15 @@ getDouble valPtr = withRunInIO $ \run ->
     handleError errPtr
     fmap realToFrac . liftIO $ peek ptr
 
+-- | Helper to work with a Double parsed from a Value.
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
 
+-- | Parse a Scientific from a Value.
 scientific :: Value -> Decoder Sci.Scientific
 scientific = withRawByteString parseScientific
 
+-- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BC.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> throwInternal $ "failed to parse Scientific: " <> err) pure
@@ -374,6 +400,7 @@ getBool valPtr = withRunInIO $ \run ->
     handleError errPtr
     fmap toBool . liftIO $ peek ptr
 
+-- | Helper to work with a Bool parsed from a Value.
 withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
 
@@ -405,18 +432,23 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     str' <- liftIO $ peek strPtr
     liftIO $ BC.packCStringLen (str', len)
 
+-- | Helper to work with a raw ByteString.Char8 parsed from a Value.
 withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
 withRawByteString f = getRawByteString >=> f
 
+-- | Helper to work with a String parsed from a Value.
 withString :: (String -> Decoder a) -> Value -> Decoder a
 withString f = getString >=> f
 
+-- | Helper to work with a Text parsed from a Value.
 withText :: (Text -> Decoder a) -> Value -> Decoder a
 withText f = getText >=> f
 
+-- | Returns True if the Value is null.
 isNull :: Value -> Decoder Bool
 isNull valPtr = fmap toBool . liftIO $ isNullImpl valPtr
 
+-- | Helper to work with an Array parsed from a Value.
 withArray :: (Array -> Decoder a) -> Value -> Decoder a
 withArray f val = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
@@ -426,6 +458,7 @@ withArray f val = withRunInIO $ \run ->
     handleError errPtr
     f arrPtr
 
+-- | Helper to work with an ArrayIter started from an Array.
 withArrayIter :: (ArrayIter -> Decoder a) -> Array -> Decoder a
 withArrayIter f arrPtr = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
@@ -435,6 +468,8 @@ withArrayIter f arrPtr = withRunInIO $ \run ->
     handleError errPtr
     f iterPtr
 
+-- | Execute a function on each Value in an ArrayIter and
+-- accumulate the results into a list.
 iterateOverArray :: (Value -> Decoder a) -> ArrayIter -> Decoder [a]
 iterateOverArray f iterPtr = go DList.empty
   where
@@ -484,7 +519,7 @@ nullable parser val = do
     then pure Nothing
     else Just <$> parser val
 
--- | Parse only a single character. TODO Unbounded versus bounded?
+-- | Parse only a single character.
 char :: Value -> Decoder Char
 char = getText >=> justOne
   where
@@ -517,8 +552,12 @@ double = getDouble
 
 -- Decoding Types and Functions
 
+-- | A Decoder is intended to be run in IO and will throw IO exceptions.
 type Decoder a = ReaderT HermesEnv IO a
 
+-- | Contains foreign references to the allocated simdjson::parser
+-- and simdjson::document. Also maintains a path string that is updated
+-- when an object field is entered and which is displayed in errors.
 data HermesEnv =
   HermesEnv
     { hParser   :: !(ForeignPtr SIMDParser)
