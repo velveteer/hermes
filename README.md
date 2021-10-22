@@ -18,7 +18,24 @@ With this in mind, `Data.Hermes` parsers can potentially decode Haskell types fa
 
 ## Usage
 
-This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for writing basic decoders. You can see the benchmarks for example usage. All parsers operate in `IO` and will re-throw errors from the underlying simdjson calls.
+This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. Running a decoder can throw IO exceptions, which you can catch as the `HermesException` type. Most simdjson exceptions will be caught and returned with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
+
+```haskell
+personDecoder :: Value -> Decoder Person
+personDecoder = withObject $ \obj ->
+  Person
+    <$> atKey "_id" text obj
+    <*> atKey "index" int obj
+    <*> atKey "guid" text obj
+    <*> atKey "isActive" bool obj
+    <*> atKey "balance" text obj
+    <*> atKey "picture" (nullable text) obj
+    <*> atKey "latitude" scientific obj
+
+-- Decode a strict ByteString via `decode`:
+parsePersons :: ByteString -> IO [Person]
+parsePersons bs = decode bs (list personDecoder)
+```
 
 ## Benchmarks
 The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits.

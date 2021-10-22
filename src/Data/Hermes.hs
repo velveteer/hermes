@@ -150,9 +150,13 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
 
+-- | Error Handling
+
 data HermesException =
     SIMDException HError
+    -- ^ An exception thrown from the simdjson library.
   | InternalException HError
+    -- ^ An exception thrown from an internal library function.
   deriving (Show, Exception)
 
 data HError =
@@ -167,22 +171,35 @@ data HError =
     -- ^ Debug information from simdjson::document.
     } deriving Show
 
-throwSIMD :: String -> String -> String -> String -> IO a
-throwSIMD ptr msg loc debug =
-  throwIO . SIMDException $ HError ptr msg loc debug
+throwSIMD :: String -> Decoder a
+throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
+{-# INLINE throwSIMD #-}
 
 throwInternal :: String -> Decoder a
-throwInternal msg = withRunInIO $ \run -> do
-  docPtr <- run $ asks hDocument
-  pointer <- run $ asks hPointer
+throwInternal msg = buildHError msg >>= liftIO . throwIO . InternalException
+{-# INLINE throwInternal #-}
+
+buildHError :: String -> Decoder HError
+buildHError msg = withRunInIO $ \run -> do
+  docFPtr <- run $ asks hDocument
+  path <- run $ asks hPath
   alloca $ \errPtr -> run $
-    alloca $ \strPtr -> do
-      locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
-      debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr strPtr)
-      liftIO
-        . throwIO
-        . InternalException
-        $ HError pointer msg (Prelude.take 100 locStr) debugStr
+    alloca $ \strPtr ->
+      withDocumentPointer docFPtr $ \docPtr -> do
+        locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
+        debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr strPtr)
+        pure $ HError path msg (Prelude.take 100 locStr) debugStr
+{-# INLINE buildHError #-}
+
+handleError :: ErrPtr -> Decoder ()
+handleError errPtr = do
+  errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
+  if errCode == SUCCESS
+  then pure ()
+  else do
+    errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
+    throwSIMD errStr
+{-# INLINE handleError #-}
 
 data SIMDErrorCode =
     SUCCESS
@@ -220,29 +237,19 @@ data SIMDErrorCode =
 
 allocaValue :: (Value -> Decoder a) -> Decoder a
 allocaValue f = allocaBytes 24 $ \val -> f (Value val)
+{-# INLINE allocaValue #-}
 
 allocaObject :: (Object -> Decoder a) -> Decoder a
 allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
+{-# INLINE allocaObject #-}
 
 allocaArray :: (Array -> Decoder a) -> Decoder a
 allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
+{-# INLINE allocaArray #-}
 
 allocaArrayIter :: (ArrayIter -> Decoder a) -> Decoder a
 allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
-
-handleError :: ErrPtr -> Decoder ()
-handleError errPtr = do
-  docPtr <- asks hDocument
-  pointer <- asks hPointer
-  errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
-  if errCode == SUCCESS
-  then pure ()
-  else liftIO $ do
-    errStr <- peekCString =<< getErrorMessageImpl errPtr
-    alloca $ \strPtr -> do
-      locStr <- peekCString =<< currentLocationImpl docPtr strPtr errPtr
-      debugStr <- peekCString =<< toDebugStringImpl docPtr strPtr
-      throwSIMD pointer errStr (Prelude.take 100 locStr) debugStr
+{-# INLINE allocaArrayIter #-}
 
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
@@ -265,28 +272,33 @@ newtype Array = Array (Ptr JSONArray)
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 
-type Decoder a = ReaderT HermesState IO a
+withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
+withParserPointer parserFPtr f =
+  withForeignPtr parserFPtr $ f . Parser
 
-data HermesState =
-  HermesState
-    { hDocument :: !Document
-    , hPointer  :: !String
-    }
+withDocumentPointer :: ForeignPtr SIMDDocument -> (Document -> Decoder a) -> Decoder a
+withDocumentPointer docFPtr f =
+  withForeignPtr docFPtr $ f . Document
 
-mkHermesState :: Document -> HermesState
-mkHermesState doc = HermesState doc mempty
+withInputPointer :: ForeignPtr PaddedString -> (InputBuffer -> Decoder a) -> Decoder a
+withInputPointer pStrFPtr f =
+  withForeignPtr pStrFPtr $ f . InputBuffer
 
-withDocument :: (Value -> Decoder a) -> Parser -> Document -> InputBuffer -> Decoder a
-withDocument f parserPtr docPtr inputPtr =
+withDocument :: (Value -> Decoder a) -> InputBuffer -> Decoder a
+withDocument f inputPtr =
   allocaValue $ \valPtr -> withRunInIO $ \run ->
   alloca $ \errPtr -> run $ do
-    -- traceM "getIterator"
-    liftIO $ getIterator parserPtr inputPtr docPtr errPtr
-    handleError errPtr
-    -- traceM "getDocumentValue"
-    liftIO $ getDocumentValueImpl docPtr valPtr errPtr
-    handleError errPtr
-    f valPtr
+    docFPtr <- asks hDocument
+    parserFPtr <- asks hParser
+    withParserPointer parserFPtr $ \parserPtr ->
+      withDocumentPointer docFPtr $ \docPtr -> do
+        -- traceM "getIterator"
+        liftIO $ getIterator parserPtr inputPtr docPtr errPtr
+        handleError errPtr
+        -- traceM "getDocumentValue"
+        liftIO $ getDocumentValueImpl docPtr valPtr errPtr
+        handleError errPtr
+        f valPtr
 
 withObject :: (Object -> Decoder a) -> Value -> Decoder a
 withObject f valPtr =
@@ -323,7 +335,7 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
 {-# INLINE withUnorderedOptionalField #-}
 
 withPath :: String -> Decoder a -> Decoder a
-withPath key = local (\st -> st { hPointer = hPointer st <> "." <> key })
+withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
 {-# INLINE withPath #-}
 
 withField :: (Value -> Decoder a) -> Object -> String -> Decoder a
@@ -395,8 +407,7 @@ fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
     handleError errPtr
     len <- fmap fromEnum . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
-    result <- f (str, len)
-    pure result
+    f (str, len)
 {-# INLINE fromCStringLen #-}
 
 getString :: Value -> Decoder String
@@ -416,8 +427,7 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     handleError errPtr
     len <- fmap fromEnum . liftIO $ peek lenPtr
     str' <- liftIO $ peek strPtr
-    result <- liftIO $ BC.packCStringLen (str', len)
-    pure result
+    liftIO $ BC.packCStringLen (str', len)
 {-# INLINE getRawByteString #-}
 
 withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
@@ -548,12 +558,15 @@ double :: Value -> Decoder Double
 double = getDouble
 {-# INLINE double #-}
 
--- Decoding Functions
+-- Decoding Types and Functions
+
+type Decoder a = ReaderT HermesEnv IO a
 
 data HermesEnv =
   HermesEnv
-    { simdParser :: !(ForeignPtr SIMDParser)
-    , simdDoc    :: !(ForeignPtr SIMDDocument)
+    { hParser   :: !(ForeignPtr SIMDParser)
+    , hDocument :: !(ForeignPtr SIMDDocument)
+    , hPath     :: !String
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to
@@ -566,8 +579,9 @@ mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
   pure HermesEnv
-    { simdParser = parser
-    , simdDoc    = document
+    { hParser   = parser
+    , hDocument = document
+    , hPath     = ""
     }
 
 -- | Shortcut for constructing a default `HermesEnv`.
@@ -597,15 +611,12 @@ mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
 -- a long-running single-threaded process. There is a small performance penalty
 -- for creating the simdjson instances on each decode.
 decode :: ByteString -> (Value -> Decoder a) -> IO a
-decode bs p = do
-  parser   <- mkSIMDParser Nothing
-  document <- mkSIMDDocument
-  input    <- mkSIMDPaddedStr bs
-  withForeignPtr parser $ \parserPtr ->
-    withForeignPtr document $ \docPtr ->
-      withForeignPtr input $ \inputPtr ->
-      flip runReaderT (mkHermesState (Document docPtr)) $ withDocument p
-          (Parser parserPtr) (Document docPtr) (InputBuffer inputPtr)
+decode bs d = do
+  hEnv      <- mkHermesEnv_
+  paddedStr <- mkSIMDPaddedStr bs
+  flip runReaderT hEnv $
+    withInputPointer paddedStr $ \inputPtr ->
+      withDocument d inputPtr
 
 -- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
 -- the `HermesEnv` then the simdjson instance finalizers will not be run.
@@ -614,10 +625,8 @@ decode bs p = do
 -- Do NOT share a `HermesEnv` across multiple threads, but it is fine for each thread
 -- to have its own.
 decodeWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> IO a
-decodeWith env bs parser =
-  withForeignPtr (simdParser env) $ \parserPtr ->
-  withForeignPtr (simdDoc env) $ \docPtr -> do
-    paddedStr <- mkSIMDPaddedStr bs
-    withForeignPtr paddedStr $ \paddedStrPtr ->
-      flip runReaderT (mkHermesState (Document docPtr)) $ withDocument parser
-        (Parser parserPtr) (Document docPtr) (InputBuffer paddedStrPtr)
+decodeWith env bs d = do
+  paddedStr <- mkSIMDPaddedStr bs
+  flip runReaderT env $
+    withInputPointer paddedStr $ \inputPtr ->
+      withDocument d inputPtr
