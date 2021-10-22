@@ -318,7 +318,7 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
   alloca $ \errPtr -> withPath key $ do
     -- traceM $ "withUnorderedOptionalField " <> key
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
-    errCode <- toEnum . fromEnum <$> (liftIO $ peek errPtr)
+    errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
