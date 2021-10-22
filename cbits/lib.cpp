@@ -19,7 +19,7 @@ extern "C" {
     delete doc;
   }
 
-  padded_string *make_input(char *bytes, size_t len) {
+  padded_string *make_input(const char *bytes, size_t len) {
     return new padded_string(bytes, len);
   }
 
@@ -90,12 +90,11 @@ extern "C" {
     return arr.operator==(arr);
   }
 
-  ondemand::value *arr_iter_get_current(
+  void arr_iter_get_current(
       ondemand::array_iterator &arr, 
       ondemand::value &out, 
       error_code &error) {
     arr.operator*().tie(out, error);
-    return &out;
   }
 
   void arr_iter_move_next(
@@ -107,7 +106,7 @@ extern "C" {
 
   void find_field(
       ondemand::object &obj, 
-      char *key, 
+      const char *key, 
       ondemand::value &out, 
       error_code &error) {
     obj.find_field(key).tie(out, error);
@@ -115,7 +114,7 @@ extern "C" {
 
   void find_field_unordered(
       ondemand::object &obj, 
-      char *key, 
+      const char *key, 
       ondemand::value &out, 
       error_code &error) {
     obj.find_field_unordered(key).tie(out, error);
