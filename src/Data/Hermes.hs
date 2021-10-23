@@ -53,8 +53,6 @@ module Data.Hermes
   , PaddedString
   ) where
 
--- import           Debug.Trace
-
 import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.IO.Unlift (withRunInIO)
@@ -305,10 +303,8 @@ withDocument f inputPtr =
     parserFPtr <- asks hParser
     withParserPointer parserFPtr $ \parserPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
-        -- traceM "getIterator"
         liftIO $ getIterator parserPtr inputPtr docPtr errPtr
         handleError errPtr
-        -- traceM "getDocumentValue"
         liftIO $ getDocumentValueImpl docPtr valPtr errPtr
         handleError errPtr
         f valPtr
@@ -318,7 +314,6 @@ withObject :: (Object -> Decoder a) -> Value -> Decoder a
 withObject f valPtr =
   allocaObject $ \oPtr -> withRunInIO $ \run ->
   alloca $ \errPtr -> run $ do
-    -- traceM "withObject"
     liftIO $ getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     f oPtr
@@ -328,7 +323,6 @@ withUnorderedField f objPtr key = withRunInIO $ \run ->
   withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath key $ do
-    -- traceM $ "withUnorderedField " <> key
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
@@ -338,7 +332,6 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
   withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath key $ do
-    -- traceM $ "withUnorderedOptionalField " <> key
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
@@ -350,7 +343,6 @@ withField f objPtr key = withRunInIO $ \run ->
   withCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
     alloca $ \errPtr -> withPath key $ do
-    -- traceM $ "withField " <> key
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
@@ -361,7 +353,6 @@ withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
-    -- traceM "getInt"
     liftIO $ getIntImpl valPtr ptr errPtr
     handleError errPtr
     fmap fromEnum . liftIO $ peek ptr
@@ -373,7 +364,6 @@ withInt f = getInt >=> f
 getDouble :: Value -> Decoder Double
 getDouble valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
-    -- traceM "getDouble"
     liftIO $ getDoubleImpl valPtr ptr errPtr
     handleError errPtr
     fmap realToFrac . liftIO $ peek ptr
@@ -395,7 +385,6 @@ parseScientific
 getBool :: Value -> Decoder Bool
 getBool valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
-    -- traceM "getBool"
     liftIO $ getBoolImpl valPtr ptr errPtr
     handleError errPtr
     fmap toBool . liftIO $ peek ptr
@@ -429,8 +418,8 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
     handleError errPtr
     len <- fmap fromEnum . liftIO $ peek lenPtr
-    str' <- liftIO $ peek strPtr
-    liftIO $ BC.packCStringLen (str', len)
+    str <- liftIO $ peek strPtr
+    liftIO $ BC.packCStringLen (str, len)
 
 -- | Helper to work with a raw ByteString.Char8 parsed from a Value.
 withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
@@ -453,7 +442,6 @@ withArray :: (Array -> Decoder a) -> Value -> Decoder a
 withArray f val = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
   allocaArray $ \arrPtr -> do
-    -- traceM "withArray"
     liftIO $ getArrayFromValueImpl val arrPtr errPtr
     handleError errPtr
     f arrPtr
@@ -463,7 +451,6 @@ withArrayIter :: (ArrayIter -> Decoder a) -> Array -> Decoder a
 withArrayIter f arrPtr = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
   allocaArrayIter $ \iterPtr -> do
-    -- traceM "withArrayIter"
     liftIO $ getArrayIterImpl arrPtr iterPtr errPtr
     handleError errPtr
     f iterPtr
@@ -471,22 +458,21 @@ withArrayIter f arrPtr = withRunInIO $ \run ->
 -- | Execute a function on each Value in an ArrayIter and
 -- accumulate the results into a list.
 iterateOverArray :: (Value -> Decoder a) -> ArrayIter -> Decoder [a]
-iterateOverArray f iterPtr = go DList.empty
+iterateOverArray f iterPtr =
+  withRunInIO $ \runInIO ->
+  alloca $ \errPtr -> runInIO $
+  allocaValue $ \valPtr ->
+  go DList.empty valPtr errPtr
   where
-    go acc = withRunInIO $ \runInIO -> do
-      -- traceM "arrIterIsDone"
-      isOver <- fmap toBool $ arrayIterIsDoneImpl iterPtr
+    go acc valPtr errPtr = do
+      isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver
-        then
-          alloca $ \errPtr -> runInIO $
-          allocaValue $ \valPtr -> do
-            -- traceM "arrayIterGetCurrent"
+        then do
             liftIO $ arrayIterGetCurrentImpl iterPtr valPtr errPtr
             handleError errPtr
             result <- f valPtr
-            -- traceM "arrayIterMoveNext"
             liftIO $ arrayIterMoveNextImpl iterPtr
-            go (acc <> DList.singleton result)
+            go (acc <> DList.singleton result) valPtr errPtr
         else
           pure $ DList.toList acc
 
@@ -531,6 +517,7 @@ char = getText >=> justOne
           throwInternal "expected a single character"
 
 -- | Parse a JSON string into a Haskell String.
+-- For best performance you should use `text` instead.
 string :: Value -> Decoder String
 string = getString
 
