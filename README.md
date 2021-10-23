@@ -48,6 +48,7 @@ The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of ob
 
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
+* If you know the key ordering of the JSON then you can use `atOrderedKey` instead of `atKey`. This is faster but it cannot handle missing keys.
 * You can improve performance by holding onto your own `HermesEnv` and using `decodeWith` instead of `decode`. This ensures the simdjson instances are allocated by the caller who can hold a reference to them, allowing re-use and preventing the garbage collector from running their finalizers. `decode` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
 
 ## Limitations
