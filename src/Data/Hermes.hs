@@ -58,8 +58,9 @@ import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.IO.Unlift (withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
-import           Data.ByteString
-import qualified Data.ByteString.Char8 as BC
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
@@ -147,7 +148,7 @@ foreign import ccall unsafe "current_location" currentLocationImpl
   :: Document -> Ptr CString -> ErrPtr -> IO CString
 
 foreign import ccall unsafe "to_debug_string" toDebugStringImpl
-  :: Document -> Ptr CString -> IO CString
+  :: Document -> CString -> Ptr CSize -> IO ()
 
 foreign import ccall unsafe "is_null" isNullImpl
   :: Value -> IO CBool
@@ -180,7 +181,7 @@ data HermesException =
 -- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
   HError
-    { hPtr        :: !String
+    { path        :: !String
     -- ^ The path to the current element determined by the decoder.
     , errorMsg    :: !String
     -- ^ An error message.
@@ -199,13 +200,18 @@ throwInternal msg = buildHError msg >>= liftIO . throwIO . InternalException
 buildHError :: String -> Decoder HError
 buildHError msg = withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
-  path <- run $ asks hPath
+  path' <- run $ asks hPath
   alloca $ \errPtr -> run $
-    alloca $ \strPtr ->
+    alloca $ \locStrPtr ->
+    alloca $ \lenPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
-        locStr <- peekCString =<< liftIO (currentLocationImpl docPtr strPtr errPtr)
-        debugStr <- peekCString =<< liftIO (toDebugStringImpl docPtr strPtr)
-        pure $ HError path msg (Prelude.take 100 locStr) debugStr
+        strFPtr <- mallocForeignPtrBytes 128
+        withForeignPtr strFPtr $ \dbStrPtr -> do
+          liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
+          len <- fmap fromEnum . liftIO $ peek lenPtr
+          debugStr <- peekCStringLen (dbStrPtr, len)
+          locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
+          pure $ HError path' msg (Prelude.take 100 locStr) debugStr
 
 handleError :: ErrPtr -> Decoder ()
 handleError errPtr = do
@@ -377,7 +383,7 @@ scientific :: Value -> Decoder Sci.Scientific
 scientific = withRawByteString parseScientific
 
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
-parseScientific :: BC.ByteString -> Decoder Sci.Scientific
+parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> throwInternal $ "failed to parse Scientific: " <> err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
@@ -410,7 +416,7 @@ getString = fromCStringLen (liftIO . peekCStringLen)
 getText :: Value -> Decoder Text
 getText = fromCStringLen (liftIO . T.peekCStringLen)
 
-getRawByteString :: Value -> Decoder BC.ByteString
+getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $
@@ -419,10 +425,10 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     handleError errPtr
     len <- fmap fromEnum . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
-    liftIO $ BC.packCStringLen (str, len)
+    liftIO $ BSC.packCStringLen (str, len)
 
 -- | Helper to work with a raw ByteString.Char8 parsed from a Value.
-withRawByteString :: (BC.ByteString -> Decoder a) -> Value -> Decoder a
+withRawByteString :: (BSC.ByteString -> Decoder a) -> Value -> Decoder a
 withRawByteString f = getRawByteString >=> f
 
 -- | Helper to work with a String parsed from a Value.
@@ -583,7 +589,7 @@ mkSIMDDocument = mask_ $ do
   newForeignPtr deleteDocumentImpl ptr
 
 mkSIMDPaddedStr :: ByteString -> IO (ForeignPtr PaddedString)
-mkSIMDPaddedStr input = mask_ $ useAsCStringLen input $ \(cstr, len) -> do
+mkSIMDPaddedStr input = mask_ $ BS.useAsCStringLen input $ \(cstr, len) -> do
   ptr <- makeInputImpl cstr (toEnum len)
   newForeignPtr deleteInputImpl ptr
 

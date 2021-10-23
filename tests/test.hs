@@ -3,7 +3,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
 import qualified Data.Aeson as A
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
@@ -11,7 +10,6 @@ import           GHC.Generics (Generic)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-import           System.IO.Unsafe (unsafePerformIO)
 import           Test.Tasty
 import           Test.Tasty.Hedgehog
 
