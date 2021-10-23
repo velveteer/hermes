@@ -37,6 +37,8 @@ parsePersons :: ByteString -> IO [Person]
 parsePersons bs = decode bs (list personDecoder)
 ```
 
+It looks a lot like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
+
 ## Benchmarks
 The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits.
 
@@ -54,6 +56,6 @@ Because the On Demand API uses a forward-only iterator (except for object fields
 
 Further work is coming to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 
 
-Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and token scanning), it is possible to parse an invalid JSON document but not realize it until later. Keep this is mind if you need the entire document to be validated up front, in which case the simdjson DOM API is a better fit for you.
+Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and token scanning), it is possible to parse an invalid JSON document but not realize it until later. Keep this is mind if you need the entire document to be validated up front, in which case a DOM API is a better fit for you.
 
 > The On Demand approach is less safe than DOM: we only validate the components of the JSON document that are used and it is possible to begin ingesting an invalid document only to find out later that the document is invalid. Are you fine ingesting a large JSON document that starts with well formed JSON but ends with invalid JSON content?
