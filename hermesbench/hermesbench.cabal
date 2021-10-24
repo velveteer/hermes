@@ -10,6 +10,7 @@ maintainer:         notjoshmiller@gmail.com
 
 extra-source-files:  json/twitter100.json
                    , json/persons9000.json
+                   , json/small_map.json
 
 benchmark bench 
   build-depends:

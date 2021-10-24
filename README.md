@@ -40,9 +40,17 @@ parsePersons bs = decode bs (list personDecoder)
 It looks a lot like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
 
 ## Benchmarks
-The benchmarks are testing full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits.
+We benchmark decoding a very small object into a Map, full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits. 
+
+### Intel Core i7-7500U @2.70GHz / 2x8GB RAM @LPDDR3
+
+#### Non-threaded runtime
 
 ![](./hermesbench/bench.svg)
+
+#### Threaded runtime
+
+![](./hermesbench/bench_threaded.svg)
 
 ## Performance Tips
 

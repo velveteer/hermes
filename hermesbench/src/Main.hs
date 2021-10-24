@@ -296,8 +296,9 @@ data Twitter =
 data Status =
   Status
     { user              :: User
-    -- collapsed metadata object fields
     , metadata          :: Map Text Text
+    -- collapsed metadata object fields
+    -- this tests iterating over the same object twice
     , result_type       :: Text
     , iso_language_code :: Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)

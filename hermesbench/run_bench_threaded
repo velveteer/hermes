@@ -1,0 +1,4 @@
+#! /bin/bash
+exec cabal bench \
+  --ghc-options="-threaded" \
+  --benchmark-options '--timeout=10 --svg=bench_threaded.svg +RTS -T'
