@@ -36,6 +36,7 @@ module Data.Hermes
   -- * Error Types
   , HermesException(..)
   , HError(..)
+  , throwHermes
   -- * Value helpers
   , isNull
   , withArray
@@ -205,11 +206,13 @@ data HError =
     -- ^ Debug information from simdjson::document.
     } deriving Show
 
+-- | Re-throw an exception caught from the simdjson library.
 throwSIMD :: String -> Decoder a
 throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
 
-throwInternal :: String -> Decoder a
-throwInternal msg = buildHError msg >>= liftIO . throwIO . InternalException
+-- | Throw an IO exception in the `Decoder` context.
+throwHermes :: String -> Decoder a
+throwHermes msg = buildHError msg >>= liftIO . throwIO . InternalException
 
 buildHError :: String -> Decoder HError
 buildHError msg = withRunInIO $ \run -> do
@@ -442,7 +445,7 @@ scientific = withRawByteString parseScientific
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
-  = either (\err -> throwInternal $ "failed to parse Scientific: " <> err) pure
+  = either (\err -> throwHermes $ "failed to parse Scientific: " <> err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
 
 getBool :: Value -> Decoder Bool
@@ -477,7 +480,7 @@ parseText :: CStringLen -> Decoder Text
 parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
-      run . throwInternal $ show err
+      run . throwHermes $ show err
 
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
@@ -595,7 +598,7 @@ char = getText >=> justOne
         Just (c, "") ->
           pure c
         _ ->
-          throwInternal "expected a single character"
+          throwHermes "expected a single character"
 
 -- | Parse a JSON string into a Haskell String.
 -- For best performance you should use `text` instead.

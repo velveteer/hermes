@@ -12,15 +12,16 @@ extra-source-files: cbits, CHANGELOG.md
 library
   exposed-modules:  Data.Hermes
   build-depends:    
-    attoparsec,
-    base,
-    bytestring,
-    dlist,
-    scientific,
-    transformers,
-    text,
-    unliftio-core,
-    unliftio
+    attoparsec    >= 0.14.1 && < 0.15,
+    base          >= 4.14.3 && < 4.15,
+    bytestring    >= 0.10.12 && < 0.11,
+    scientific    >= 0.3.7 && < 0.4,
+    text          >= 1.2.4 && < 1.3,
+    transformers  >= 0.5.6 && < 0.6,
+    dlist         >= 1.0 && < 1.1,
+    unliftio      >= 0.2.20 && < 0.3,
+    unliftio-core >= 0.2.0 && < 0.3
+
   hs-source-dirs:   src
   default-language: Haskell2010
   ghc-options: -Wall 
@@ -42,13 +43,14 @@ test-suite hermes-test
   main-is:          test.hs
   ghc-options: -Wall 
   build-depends:    
-    aeson,
-    base ^>=4.14.3.0,
-    bytestring,
-    containers,
-    hedgehog,
-    hermes,
-    scientific,
-    tasty,
-    tasty-hedgehog,
-    text
+    aeson          >= 2.0.1 && < 2.1,
+    base           >= 4.14.3 && < 4.15,
+    bytestring     >= 0.10.12 && < 0.11,
+    containers     >= 0.6.5 && < 0.7,
+    scientific     >= 0.3.7 && < 0.4,
+    text           >= 1.2.4 && < 1.3,
+    hedgehog       >= 1.0.5 && < 1.1,
+    tasty          >= 1.4.2 && < 1.5,
+    tasty-hedgehog >= 1.1.0 && < 1.2,
+    hermes
+
