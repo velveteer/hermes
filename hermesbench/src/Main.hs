@@ -24,7 +24,18 @@ import           Data.Hermes
 
 main :: IO ()
 main = defaultMain
-  [ withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
+  [ withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
+    bgroup "Small Map Decode"
+      [ bench "Hermes Decode" $
+          nfIO (flip decode (objectAsKeyValues pure int) =<< input)
+      , bench "Aeson Decode Lazy" $
+          nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe (Map Text Int)))
+      , bench "Aeson Decode Strict" $
+          nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe (Map Text Int)))
+      , bench "Waargonaut Decode Attoparsec" $
+          nfIO (void $ WA.decodeAttoparsecByteString (D.objectAsKeyValues D.text D.int) =<< input)
+      ]
+  , withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Full Decode Persons Array JSON"
     [ bgroup "Ordered Keys"

@@ -98,14 +98,14 @@ decodeFriend = withObject $ \obj ->
 genPerson :: Gen Person
 genPerson = Person
   <$> Gen.text (Range.linear 0 100) Gen.unicode
-  <*> Gen.int (Range.linear 0 1000000000)
+  <*> Gen.int (Range.linear minBound maxBound)
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> Gen.bool
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.int (Range.linear 0 100)
-  <*> Gen.double (Range.constant 0 1000)
-  <*> Gen.double (Range.constant 0 1000)
+  <*> Gen.double (Range.constant 0 10000000000000000)
+  <*> Gen.double (Range.constant 0 10000000000000000)
   <*> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.list (Range.linear 0 100) genFriend
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)

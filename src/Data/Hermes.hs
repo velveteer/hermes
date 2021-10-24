@@ -169,10 +169,10 @@ foreign import ccall unsafe "is_null" isNullImpl
 
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
-  :: Value -> Ptr CInt -> ErrPtr -> IO ()
+  :: Value -> Ptr Int -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_double" getDoubleImpl
-  :: Value -> Ptr CDouble -> ErrPtr -> IO ()
+  :: Value -> Ptr Double -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_string" getStringImpl
   :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
@@ -222,14 +222,14 @@ buildHError msg = withRunInIO $ \run -> do
         strFPtr <- mallocForeignPtrBytes 128
         withForeignPtr strFPtr $ \dbStrPtr -> do
           liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
-          len <- fmap fromEnum . liftIO $ peek lenPtr
+          len <- fmap fromIntegral . liftIO $ peek lenPtr
           debugStr <- peekCStringLen (dbStrPtr, len)
           locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
           pure $ HError path' msg (Prelude.take 100 locStr) debugStr
 
 handleError :: ErrPtr -> Decoder ()
 handleError errPtr = do
-  errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
+  errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
   if errCode == SUCCESS
   then pure ()
   else do
@@ -370,7 +370,7 @@ iterateOverFields fk fv iterPtr =
         then do
             liftIO $ objectIterGetCurrentImpl iterPtr keyPtr lenPtr valPtr errPtr
             handleError errPtr
-            kLen <- fmap fromEnum . liftIO $ peek lenPtr
+            kLen <- fmap fromIntegral . liftIO $ peek lenPtr
             kStr <- liftIO $ peek keyPtr
             keyTxt <- parseText (kStr, kLen)
             withPath (T.unpack keyTxt) $ do
@@ -396,7 +396,7 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath key $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
-    errCode <- toEnum . fromEnum <$> liftIO (peek errPtr)
+    errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
@@ -418,7 +418,7 @@ getInt valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
     liftIO $ getIntImpl valPtr ptr errPtr
     handleError errPtr
-    fmap fromEnum . liftIO $ peek ptr
+    liftIO $ peek ptr
 
 -- | Helper to work with an Int parsed from a Value.
 withInt :: (Int -> Decoder a) -> Value -> Decoder a
@@ -429,7 +429,7 @@ getDouble valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
     liftIO $ getDoubleImpl valPtr ptr errPtr
     handleError errPtr
-    fmap realToFrac . liftIO $ peek ptr
+    liftIO $ peek ptr
 
 -- | Helper to work with a Double parsed from a Value.
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
@@ -463,7 +463,7 @@ fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
   alloca $ \errPtr -> do
     liftIO $ getStringImpl valPtr strPtr lenPtr errPtr
     handleError errPtr
-    len <- fmap fromEnum . liftIO $ peek lenPtr
+    len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     f (str, len)
 
@@ -486,7 +486,7 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
   alloca $ \errPtr -> do
     liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
     handleError errPtr
-    len <- fmap fromEnum . liftIO $ peek lenPtr
+    len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     liftIO $ BSC.packCStringLen (str, len)
 
