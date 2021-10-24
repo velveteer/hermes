@@ -48,9 +48,6 @@ module Data.Hermes
   , Object
   , Array
   , ArrayIter
-  , SIMDParser
-  , SIMDDocument
-  , PaddedString
   ) where
 
 import           Control.Monad ((>=>))
@@ -59,8 +56,8 @@ import           Control.Monad.IO.Unlift (withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Internal as BS
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
@@ -74,8 +71,8 @@ import           UnliftIO.Foreign hiding (allocaArray, withArray)
 data SIMDParser
 -- | Phantom type for a pointer to simdjson::ondemand::document.
 data SIMDDocument
--- | Phantom type for a pointer to simdjson::padded_string.
-data PaddedString
+-- | Phantom type for a pointer to simdjson::padded_string_view.
+data PaddedStringView
 
 -- | Alias for a pointer to the simdjson::error_code that most functions use
 -- to report errors back to us.
@@ -103,11 +100,11 @@ foreign import ccall unsafe "make_document" makeDocumentImpl
 foreign import ccall unsafe "&delete_document" deleteDocumentImpl
   :: FunPtr (Ptr SIMDDocument -> IO ())
 
-foreign import ccall unsafe "make_input" makeInputImpl
-  :: CString -> CSize -> IO (Ptr PaddedString)
+foreign import ccall unsafe "make_input_view" makeInputViewImpl
+  :: CString -> CSize -> CSize -> IO (Ptr PaddedStringView)
 
-foreign import ccall unsafe "&delete_input" deleteInputImpl
-  :: FunPtr (Ptr PaddedString -> IO ())
+foreign import ccall unsafe "&delete_input_view" deleteInputViewImpl
+  :: FunPtr (Ptr PaddedStringView -> IO ())
 
 -- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
@@ -274,8 +271,8 @@ newtype Parser = Parser (Ptr SIMDParser)
 -- | A reference to an opaque simdjson::ondemand::document.
 newtype Document = Document (Ptr SIMDDocument)
 
--- | A reference to an opaque simdjson::padded_string.
-newtype InputBuffer = InputBuffer (Ptr PaddedString)
+-- | A reference to an opaque simdjson::padded_string_view.
+newtype InputBuffer = InputBuffer (Ptr PaddedStringView)
 
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
@@ -297,7 +294,7 @@ withDocumentPointer :: ForeignPtr SIMDDocument -> (Document -> Decoder a) -> Dec
 withDocumentPointer docFPtr f =
   withForeignPtr docFPtr $ f . Document
 
-withInputPointer :: ForeignPtr PaddedString -> (InputBuffer -> Decoder a) -> Decoder a
+withInputPointer :: ForeignPtr PaddedStringView -> (InputBuffer -> Decoder a) -> Decoder a
 withInputPointer pStrFPtr f =
   withForeignPtr pStrFPtr $ f . InputBuffer
 
@@ -588,10 +585,12 @@ mkSIMDDocument = mask_ $ do
   ptr <- makeDocumentImpl
   newForeignPtr deleteDocumentImpl ptr
 
-mkSIMDPaddedStr :: ByteString -> IO (ForeignPtr PaddedString)
-mkSIMDPaddedStr input = mask_ $ BS.useAsCStringLen input $ \(cstr, len) -> do
-  ptr <- makeInputImpl cstr (toEnum len)
-  newForeignPtr deleteInputImpl ptr
+mkSIMDPaddedStrView :: ByteString -> IO (ForeignPtr PaddedStringView)
+mkSIMDPaddedStrView input = mask_ $ do
+  let (fp, o, len) = BS.toForeignPtr input
+  withForeignPtr fp $ \bsPtr -> do
+    ptr <- makeInputViewImpl (bsPtr `plusPtr` o) (toEnum len) (toEnum 200000000)
+    newForeignPtr deleteInputViewImpl ptr
 
 -- | Construct an ephemeral `HermesEnv` and use it to decode the input.
 -- The simdjson instances will be out of scope when decode returns, which
@@ -602,7 +601,7 @@ mkSIMDPaddedStr input = mask_ $ BS.useAsCStringLen input $ \(cstr, len) -> do
 decode :: ByteString -> (Value -> Decoder a) -> IO a
 decode bs d = do
   hEnv      <- mkHermesEnv_
-  paddedStr <- mkSIMDPaddedStr bs
+  paddedStr <- mkSIMDPaddedStrView bs
   flip runReaderT hEnv $
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr
@@ -615,7 +614,7 @@ decode bs d = do
 -- to have its own.
 decodeWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> IO a
 decodeWith env bs d = do
-  paddedStr <- mkSIMDPaddedStr bs
+  paddedStr <- mkSIMDPaddedStrView bs
   flip runReaderT env $
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr

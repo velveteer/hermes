@@ -28,7 +28,7 @@ rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
   withTests 1000 . property $ do
     p <- forAll genPerson
-    let encoded = BSL.toStrict . A.encode $ p
+    encoded <- pure . BSL.toStrict . A.encode $ p
     dp <- evalIO $ decode encoded decodePerson
     p === dp
 

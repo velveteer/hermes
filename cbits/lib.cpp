@@ -19,16 +19,8 @@ extern "C" {
     delete doc;
   }
 
-  padded_string *make_input(const char *bytes, size_t len) {
-    return new padded_string(bytes, len);
-  }
-
   padded_string_view *make_input_view(const char *bytes, size_t len, size_t capacity) {
     return new padded_string_view(bytes, len, capacity);
-  }
-
-  void delete_input(padded_string *str) {
-    delete str;
   }
 
   void delete_input_view(padded_string_view *str) {
@@ -36,14 +28,6 @@ extern "C" {
   }
 
   void get_iterator(
-      ondemand::parser &parser, 
-      padded_string &input, 
-      ondemand::document &out, 
-      error_code &error) {
-    parser.iterate(input).tie(out, error);
-  }
-
-  void get_iterator_from_view(
       ondemand::parser &parser, 
       padded_string_view &input, 
       ondemand::document &out, 
