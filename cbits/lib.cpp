@@ -157,10 +157,8 @@ extern "C" {
   void get_raw_json_token(
       ondemand::value &val, 
       const char **out, 
-      size_t &len, 
-      error_code &error) {
+      size_t &len) {
     std::string_view buf = val.raw_json_token();
-    error = SUCCESS;
     *out = buf.data();
     len = buf.length();
   }

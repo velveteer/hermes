@@ -182,7 +182,7 @@ foreign import ccall unsafe "get_bool" getBoolImpl
   :: Value -> Ptr CBool -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
-  :: Value -> Ptr CString -> Ptr CSize -> ErrPtr -> IO ()
+  :: Value -> Ptr CString -> Ptr CSize -> IO ()
 
 -- | The library can throw exceptions from simdjson in addition to
 -- its own exceptions.
@@ -485,10 +485,8 @@ parseText cstr =
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
   alloca $ \strPtr ->
-  alloca $ \lenPtr -> run $
-  alloca $ \errPtr -> do
-    liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr errPtr
-    handleError errPtr
+  alloca $ \lenPtr -> run $ do
+    liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     liftIO $ BSC.packCStringLen (str, len)
