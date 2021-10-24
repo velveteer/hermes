@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {- | Exposes functions for building JSON decoders that harness the power
 of the simdjson::ondemand API.
@@ -63,6 +64,7 @@ import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Foreign as T
 import           UnliftIO.Exception
 import           UnliftIO.Foreign hiding (allocaArray, withArray)
@@ -411,7 +413,11 @@ getString :: Value -> Decoder String
 getString = fromCStringLen (liftIO . peekCStringLen)
 
 getText :: Value -> Decoder Text
-getText = fromCStringLen (liftIO . T.peekCStringLen)
+getText =
+  fromCStringLen $ \cstr ->
+  withRunInIO $ \run ->
+    T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
+      run . throwInternal $ show err
 
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
