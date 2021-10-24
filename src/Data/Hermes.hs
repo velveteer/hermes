@@ -101,7 +101,7 @@ foreign import ccall unsafe "&delete_document" deleteDocumentImpl
   :: FunPtr (Ptr SIMDDocument -> IO ())
 
 foreign import ccall unsafe "make_input_view" makeInputViewImpl
-  :: CString -> CSize -> CSize -> IO (Ptr PaddedStringView)
+  :: CString -> CSize -> IO (Ptr PaddedStringView)
 
 foreign import ccall unsafe "&delete_input_view" deleteInputViewImpl
   :: FunPtr (Ptr PaddedStringView -> IO ())
@@ -589,7 +589,7 @@ mkSIMDPaddedStrView :: ByteString -> IO (ForeignPtr PaddedStringView)
 mkSIMDPaddedStrView input = mask_ $ do
   let (fp, o, len) = BS.toForeignPtr input
   withForeignPtr fp $ \bsPtr -> do
-    ptr <- makeInputViewImpl (bsPtr `plusPtr` o) (toEnum len) (toEnum 200000000)
+    ptr <- makeInputViewImpl (bsPtr `plusPtr` o) (toEnum len)
     newForeignPtr deleteInputViewImpl ptr
 
 -- | Construct an ephemeral `HermesEnv` and use it to decode the input.

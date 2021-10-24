@@ -19,8 +19,8 @@ extern "C" {
     delete doc;
   }
 
-  padded_string_view *make_input_view(const char *bytes, size_t len, size_t capacity) {
-    return new padded_string_view(bytes, len, capacity);
+  padded_string_view *make_input_view(const char *bytes, size_t len) {
+    return new padded_string_view(bytes, len, len+SIMDJSON_PADDING);
   }
 
   void delete_input_view(padded_string_view *str) {
