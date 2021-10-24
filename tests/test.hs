@@ -1,9 +1,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import           GHC.Generics (Generic)
@@ -48,7 +52,11 @@ data Person =
     , greeting      :: Maybe Text
     , favoriteFruit :: Text
     , employer      :: Employer
+    , mapOfInts     :: Map KeyType Int
     } deriving (Eq, Show, Generic, A.ToJSON)
+
+newtype KeyType = KeyType Text
+  deriving newtype (Eq, Ord, Show, A.ToJSON, A.ToJSONKey)
 
 data Friend =
   Friend
@@ -79,6 +87,7 @@ decodePerson = withObject $ \obj ->
     <*> atKey "greeting" (nullable text) obj
     <*> atKey "favoriteFruit" text obj
     <*> atKey "employer" decodeEmployer obj
+    <*> (Map.fromList <$> atKey "mapOfInts" (objectAsKeyValues (pure . KeyType) int) obj)
 
 decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->
@@ -102,6 +111,9 @@ genPerson = Person
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> genEmployer
+  <*> Gen.map (Range.linear 0 100)
+      ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
+           <*> (Gen.int (Range.linear 0 10000)))
 
 genFriend :: Gen Friend
 genFriend = Friend

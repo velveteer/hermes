@@ -56,6 +56,36 @@ extern "C" {
     val.get_object().tie(out, error);
   }
 
+  void get_object_iter(
+      ondemand::object &obj, 
+      ondemand::object_iterator &iterOut, 
+      error_code &error) {
+    obj.begin().tie(iterOut, error);
+  }
+
+  bool obj_iter_is_done(ondemand::object_iterator &obj) {
+    return obj.operator==(obj);
+  }
+
+  void obj_iter_get_current(
+      ondemand::object_iterator &obj, 
+      const char **key, 
+      size_t *len,
+      ondemand::value &out, 
+      error_code &error) {
+    ondemand::field f;
+    obj.operator*().tie(f, error);
+    std::string_view uek;
+    f.unescaped_key().tie(uek, error);
+    *key = uek.data();
+    *len = uek.length();
+    out = f.value();
+  }
+
+  void obj_iter_move_next(ondemand::object_iterator &obj) {
+    ++obj;
+  }
+
   void get_array_from_value(
       ondemand::value &val, 
       ondemand::array &out, 
@@ -81,10 +111,7 @@ extern "C" {
     arr.operator*().tie(out, error);
   }
 
-  void arr_iter_move_next(
-      ondemand::array_iterator &arr, 
-      ondemand::value &out, 
-      error_code &error) {
+  void arr_iter_move_next(ondemand::array_iterator &arr) {
     ++arr;
   }
 

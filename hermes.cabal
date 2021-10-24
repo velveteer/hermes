@@ -45,6 +45,7 @@ test-suite hermes-test
     aeson,
     base ^>=4.14.3.0,
     bytestring,
+    containers,
     hedgehog,
     hermes,
     scientific,

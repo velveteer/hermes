@@ -10,6 +10,8 @@ import           Control.DeepSeq (NFData)
 import           Control.Monad (void)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import           GHC.Generics (Generic)
@@ -283,7 +285,8 @@ data Twitter =
 data Status =
   Status
     { user              :: User
-    -- metadata object fields
+    -- collapsed metadata object fields
+    , metadata          :: Map Text Text
     , result_type       :: Text
     , iso_language_code :: Text
     } deriving (Show, Generic, NFData, Aeson.FromJSON)
@@ -304,11 +307,12 @@ decodeTwitter = withObject $ \obj ->
 decodeStatus :: Value -> Decoder Status
 decodeStatus = withObject $ \obj -> do
   u <- atKey "user" decodeUser obj
+  mdMap <- Map.fromList <$> atKey "metadata" (objectAsKeyValues pure text) obj
   md <- atKey "metadata" pure obj
   flip withObject md $ \m -> do
     result <- atKey "result_type" text m
     iso <- atKey "iso_language_code" text m
-    pure $ Status u result iso
+    pure $ Status u mdMap result iso
 
 decodeUser :: Value -> Decoder User
 decodeUser = withObject $ \obj ->
@@ -326,10 +330,11 @@ twitterDecoder =
 statusDecoder :: Monad f => D.Decoder f Status
 statusDecoder = D.withCursor $ \curs -> do
   u       <- D.fromKey "user" userDecoder curs
+  mdMap   <- Map.fromList <$> D.fromKey "metadata" (D.objectAsKeyValues D.text D.text) curs
   newCurs <- D.moveToKey "metadata" curs
   result  <- D.fromKey "result_type" D.text newCurs
   iso     <- D.fromKey "iso_language_code" D.text newCurs
-  pure $ Status u result iso
+  pure $ Status u mdMap result iso
 
 userDecoder :: Monad f => D.Decoder f User
 userDecoder =

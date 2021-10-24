@@ -16,6 +16,7 @@ benchmark bench
     aeson,
     base,
     bytestring,
+    containers,
     deepseq,
     hermes,
     scientific,

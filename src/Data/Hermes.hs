@@ -29,6 +29,7 @@ module Data.Hermes
   , text
   , list
   , nullable
+  , objectAsKeyValues
   -- * Environment creation
   , mkHermesEnv
   , mkHermesEnv_
@@ -88,6 +89,8 @@ data JSONObject
 data JSONArray
 -- | Phantom type for a pointer to simdjson::ondemand::array_iterator
 data JSONArrayIter
+-- | Phantom type for a pointer to simdjson::ondemand::object_iterator
+data JSONObjectIter
 
 -- Constructor/destructors
 foreign import ccall unsafe "parser_init" parserInit
@@ -117,6 +120,18 @@ foreign import ccall unsafe "get_document_value" getDocumentValueImpl
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
   :: Value -> Object -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "get_object_iter" getObjectIterImpl
+  :: Object -> ObjectIter -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "obj_iter_is_done" objectIterIsDoneImpl
+  :: ObjectIter -> IO CBool
+
+foreign import ccall unsafe "obj_iter_get_current" objectIterGetCurrentImpl
+  :: ObjectIter -> Ptr CString -> Ptr CSize -> Value -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "obj_iter_move_next" objectIterMoveNextImpl
+  :: ObjectIter -> IO ()
 
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
   :: Value -> Array -> ErrPtr -> IO ()
@@ -267,6 +282,9 @@ allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
 allocaArrayIter :: (ArrayIter -> Decoder a) -> Decoder a
 allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
 
+allocaObjectIter :: (ObjectIter -> Decoder a) -> Decoder a
+allocaObjectIter f = allocaBytes 24 $ \iter -> f (ObjectIter iter)
+
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
 
@@ -287,6 +305,9 @@ newtype Array = Array (Ptr JSONArray)
 
 -- | A reference to an opaque simdjson::ondemand::array_iterator.
 newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
+
+-- | A reference to an opaque simdjson::ondemand::object_iterator.
+newtype ObjectIter = ObjectIter (Ptr JSONObjectIter)
 
 withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
 withParserPointer parserFPtr f =
@@ -322,6 +343,43 @@ withObject f valPtr =
     liftIO $ getObjectFromValueImpl valPtr oPtr errPtr
     handleError errPtr
     f oPtr
+
+-- | Helper to work with an ObjectIter started from an Object.
+withObjectIter :: (ObjectIter -> Decoder a) -> Object -> Decoder a
+withObjectIter f objPtr = withRunInIO $ \run ->
+  alloca $ \errPtr -> run $
+  allocaObjectIter $ \iterPtr -> do
+    liftIO $ getObjectIterImpl objPtr iterPtr errPtr
+    handleError errPtr
+    f iterPtr
+
+-- | Execute a function on each Field in an ObjectIter and
+-- accumulate key-value tuples into a list.
+iterateOverFields :: (Text -> Decoder a) -> (Value -> Decoder b) -> ObjectIter -> Decoder [(a, b)]
+iterateOverFields fk fv iterPtr =
+  withRunInIO $ \runInIO ->
+  alloca $ \errPtr ->
+  alloca $ \lenPtr ->
+  alloca $ \keyPtr -> runInIO $
+  allocaValue $ \valPtr ->
+  go DList.empty keyPtr lenPtr valPtr errPtr
+  where
+    go acc keyPtr lenPtr valPtr errPtr = do
+      isOver <- fmap toBool . liftIO $ objectIterIsDoneImpl iterPtr
+      if not isOver
+        then do
+            liftIO $ objectIterGetCurrentImpl iterPtr keyPtr lenPtr valPtr errPtr
+            handleError errPtr
+            kLen <- fmap fromEnum . liftIO $ peek lenPtr
+            kStr <- liftIO $ peek keyPtr
+            keyTxt <- parseText (kStr, kLen)
+            withPath (T.unpack keyTxt) $ do
+              k <- fk keyTxt
+              v <- fv valPtr
+              liftIO $ objectIterMoveNextImpl iterPtr
+              go (acc <> DList.singleton (k, v)) keyPtr lenPtr valPtr errPtr
+        else
+          pure $ DList.toList acc
 
 withUnorderedField :: (Value -> Decoder a) -> Object -> String -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
@@ -413,8 +471,10 @@ getString :: Value -> Decoder String
 getString = fromCStringLen (liftIO . peekCStringLen)
 
 getText :: Value -> Decoder Text
-getText =
-  fromCStringLen $ \cstr ->
+getText = fromCStringLen parseText
+
+parseText :: CStringLen -> Decoder Text
+parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
       run . throwInternal $ show err
@@ -505,6 +565,18 @@ list :: (Value -> Decoder a) -> Value -> Decoder [a]
 list f val =
   flip withArray val $ \arr ->
   flip withArrayIter arr $ iterateOverArray f
+
+-- | Parse an object into a homogenous list of key-value tuples.
+objectAsKeyValues
+  :: (Text -> Decoder k)
+  -- ^ Parses a Text key in the Decoder monad. JSON keys are always text.
+  -> (Value -> Decoder v)
+  -- ^ Decoder for the field value.
+  -> Value
+  -> Decoder [(k, v)]
+objectAsKeyValues kf vf val =
+  flip withObject val $ \obj ->
+  flip withObjectIter obj $ iterateOverFields kf vf
 
 -- | Transforms a parser to return Nothing when the value is null.
 nullable :: (Value -> Decoder a) -> Value -> Decoder (Maybe a)
