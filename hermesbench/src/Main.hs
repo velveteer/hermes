@@ -28,6 +28,8 @@ main = defaultMain
     bgroup "Small Map Decode"
       [ bench "Hermes Decode" $
           nfIO (flip decode (objectAsKeyValues pure int) =<< input)
+      , bench "Hermes DecodeWith" $
+          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (objectAsKeyValues pure int)})
       , bench "Aeson Decode Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe (Map Text Int)))
       , bench "Aeson Decode Strict" $

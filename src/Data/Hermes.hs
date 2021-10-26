@@ -1,5 +1,6 @@
 {-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -14,7 +15,9 @@ module Data.Hermes
     Decoder
   , HermesEnv
   , decode
+  , decodeEither
   , decodeWith
+  , decodeEitherWith
   -- * Object field accessors
   , atKey
   , atOptionalKey
@@ -53,6 +56,7 @@ module Data.Hermes
   , ArrayIter
   ) where
 
+import           Control.DeepSeq (NFData)
 import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.IO.Unlift (withRunInIO)
@@ -68,6 +72,8 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Foreign as T
+import           GHC.Generics (Generic)
+import qualified System.IO.Unsafe as Unsafe
 import           UnliftIO.Exception
 import           UnliftIO.Foreign hiding (allocaArray, withArray)
 
@@ -191,7 +197,7 @@ data HermesException =
     -- ^ An exception thrown from the simdjson library.
   | InternalException HError
     -- ^ An exception thrown from an internal library function.
-  deriving (Show, Exception)
+  deriving (Show, Generic, NFData, Exception)
 
 -- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
@@ -204,7 +210,7 @@ data HError =
     -- ^ Truncated location of the simdjson document iterator.
     , docDebug    :: !String
     -- ^ Debug information from simdjson::document.
-    } deriving Show
+    } deriving (Show, Generic, NFData)
 
 -- | Re-throw an exception caught from the simdjson library.
 throwSIMD :: String -> Decoder a
@@ -685,6 +691,11 @@ decode bs d = do
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr
 
+-- | Helper that wraps `decode` and catches any IO exceptions before
+-- converting IO to Either.
+decodeEither :: ByteString -> (Value -> Decoder a) -> Either HermesException a
+decodeEither bs d = Unsafe.unsafePerformIO . try $ decode bs d
+
 -- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
 -- the `HermesEnv` then the simdjson instance finalizers will not be run.
 -- This is useful for long-running applications that want to re-use simdjson instances
@@ -697,3 +708,8 @@ decodeWith env bs d = do
   flip runReaderT env $
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr
+
+-- | Helper that wraps `decodeWith` and catches any IO exceptions before
+-- converting IO to Either.
+decodeEitherWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> Either HermesException a
+decodeEitherWith env bs d = Unsafe.unsafePerformIO . try $ decodeWith env bs d
