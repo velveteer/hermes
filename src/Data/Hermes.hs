@@ -197,7 +197,7 @@ data HermesException =
     -- ^ An exception thrown from the simdjson library.
   | InternalException HError
     -- ^ An exception thrown from an internal library function.
-  deriving (Show, Generic, NFData, Exception)
+  deriving (Eq, Show, Generic, NFData, Exception)
 
 -- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
@@ -210,7 +210,7 @@ data HError =
     -- ^ Truncated location of the simdjson document iterator.
     , docDebug    :: !String
     -- ^ Debug information from simdjson::document.
-    } deriving (Show, Generic, NFData)
+    } deriving (Eq, Show, Generic, NFData)
 
 -- | Re-throw an exception caught from the simdjson library.
 throwSIMD :: String -> Decoder a
