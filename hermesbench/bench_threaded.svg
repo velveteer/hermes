@@ -1,168 +1,177 @@
-<svg xmlns="http://www.w3.org/2000/svg" height="942" width="960.0" font-size="16" font-family="sans-serif" stroke-width="2">
+<svg xmlns="http://www.w3.org/2000/svg" height="997" width="960.0" font-size="16" font-family="sans-serif" stroke-width="2">
 <g transform="translate(10.0 0)">
-<text fill="hsl(0, 100%, 40%)" y="22">Small Map Decode.Hermes Decode 2.03 μs</text>
+<text fill="hsl(0, 100%, 40%)" y="22">Small Map Decode.Hermes Decode 2.05 μs</text>
 <g>
-<title>2.03 μs ±  95 ns</title>
-<rect y="28" rx="5" height="22" width="0.002903068883172623" fill="hsl(0, 100%, 80%)" stroke="hsl(0, 100%, 55%)" />
-<g stroke="hsl(0, 100%, 40%)"><line x1="0.002767440967401932" x2="0.0030386967989433143" y1="39" y2="39" />
-<line x1="0.002767440967401932" x2="0.002767440967401932" y1="33" y2="45" />
-<line x1="0.0030386967989433143" x2="0.0030386967989433143" y1="33" y2="45" />
+<title>2.05 μs ± 138 ns</title>
+<rect y="28" rx="5" height="22" width="0.0029164479179069392" fill="hsl(0, 100%, 80%)" stroke="hsl(0, 100%, 55%)" />
+<g stroke="hsl(0, 100%, 40%)"><line x1="0.002720001566362035" x2="0.0031128942694518434" y1="39" y2="39" />
+<line x1="0.002720001566362035" x2="0.002720001566362035" y1="33" y2="45" />
+<line x1="0.0031128942694518434" x2="0.0031128942694518434" y1="33" y2="45" />
 </g>
 </g>
-<text fill="hsl(21, 100%, 40%)" y="77">Small Map Decode.Aeson Decode Lazy 3.06 μs</text>
+<text fill="hsl(20, 100%, 40%)" y="77">Small Map Decode.Hermes DecodeWith 1.18 μs</text>
 <g>
-<title>3.06 μs ± 227 ns</title>
-<rect y="83" rx="5" height="22" width="0.004367378117116246" fill="hsl(21, 100%, 80%)" stroke="hsl(21, 100%, 55%)" />
-<g stroke="hsl(21, 100%, 40%)"><line x1="0.004043227855815461" x2="0.004691528378417032" y1="94" y2="94" />
-<line x1="0.004043227855815461" x2="0.004043227855815461" y1="88" y2="100" />
-<line x1="0.004691528378417032" x2="0.004691528378417032" y1="88" y2="100" />
+<title>1.18 μs ±  96 ns</title>
+<rect y="83" rx="5" height="22" width="0.001680172801282475" fill="hsl(20, 100%, 80%)" stroke="hsl(20, 100%, 55%)" />
+<g stroke="hsl(20, 100%, 40%)"><line x1="0.0015437488787513418" x2="0.0018165967238136082" y1="94" y2="94" />
+<line x1="0.0015437488787513418" x2="0.0015437488787513418" y1="88" y2="100" />
+<line x1="0.0018165967238136082" x2="0.0018165967238136082" y1="88" y2="100" />
 </g>
 </g>
-<text fill="hsl(42, 100%, 40%)" y="132">Small Map Decode.Aeson Decode Strict 3.03 μs</text>
+<text fill="hsl(40, 100%, 40%)" y="132">Small Map Decode.Aeson Decode Lazy 3.13 μs</text>
 <g>
-<title>3.03 μs ±  81 ns</title>
-<rect y="138" rx="5" height="22" width="0.004332720730790347" fill="hsl(42, 100%, 80%)" stroke="hsl(42, 100%, 55%)" />
-<g stroke="hsl(42, 100%, 40%)"><line x1="0.0042176068088559775" x2="0.004447834652724716" y1="149" y2="149" />
-<line x1="0.0042176068088559775" x2="0.0042176068088559775" y1="143" y2="155" />
-<line x1="0.004447834652724716" x2="0.004447834652724716" y1="143" y2="155" />
+<title>3.13 μs ± 307 ns</title>
+<rect y="138" rx="5" height="22" width="0.004459260768827521" fill="hsl(40, 100%, 80%)" stroke="hsl(40, 100%, 55%)" />
+<g stroke="hsl(40, 100%, 40%)"><line x1="0.004023145771497906" x2="0.004895375766157136" y1="149" y2="149" />
+<line x1="0.004023145771497906" x2="0.004023145771497906" y1="143" y2="155" />
+<line x1="0.004895375766157136" x2="0.004895375766157136" y1="143" y2="155" />
 </g>
 </g>
-<text fill="hsl(63, 100%, 40%)" y="187">Small Map Decode.Waargonaut Decode Attoparsec 65.1 μs</text>
+<text fill="hsl(60, 100%, 40%)" y="187">Small Map Decode.Aeson Decode Strict 3.12 μs</text>
 <g>
-<title>65.1 μs ± 3.5 μs</title>
-<rect y="193" rx="5" height="22" width="0.09311049379556507" fill="hsl(63, 100%, 80%)" stroke="hsl(63, 100%, 55%)" />
-<g stroke="hsl(63, 100%, 40%)"><line x1="0.08805009516384914" x2="0.09817089242728101" y1="204" y2="204" />
-<line x1="0.08805009516384914" x2="0.08805009516384914" y1="198" y2="210" />
-<line x1="0.09817089242728101" x2="0.09817089242728101" y1="198" y2="210" />
+<title>3.12 μs ± 184 ns</title>
+<rect y="193" rx="5" height="22" width="0.004432946721998666" fill="hsl(60, 100%, 80%)" stroke="hsl(60, 100%, 55%)" />
+<g stroke="hsl(60, 100%, 40%)"><line x1="0.00417060002807115" x2="0.004695293415926182" y1="204" y2="204" />
+<line x1="0.00417060002807115" x2="0.00417060002807115" y1="198" y2="210" />
+<line x1="0.004695293415926182" x2="0.004695293415926182" y1="198" y2="210" />
 </g>
 </g>
-<text fill="hsl(84, 100%, 40%)" y="242">Full Decode Persons Array JSON.Ordered Keys.Hermes Decode 222  ms</text>
+<text fill="hsl(80, 100%, 40%)" y="242">Small Map Decode.Waargonaut Decode Attoparsec 64.9 μs</text>
 <g>
-<title>222  ms ± 7.8 ms</title>
-<rect y="248" rx="5" height="22" width="317.546644882748" fill="hsl(84, 100%, 80%)" stroke="hsl(84, 100%, 55%)" />
-<g stroke="hsl(84, 100%, 40%)"><line x1="306.3421804122214" x2="328.7511093532746" y1="259" y2="259" />
-<line x1="306.3421804122214" x2="306.3421804122214" y1="253" y2="265" />
-<line x1="328.7511093532746" x2="328.7511093532746" y1="253" y2="265" />
+<title>64.9 μs ± 3.0 μs</title>
+<rect y="248" rx="5" height="22" width="0.0923863836141025" fill="hsl(80, 100%, 80%)" stroke="hsl(80, 100%, 55%)" />
+<g stroke="hsl(80, 100%, 40%)"><line x1="0.08807872094542117" x2="0.09669404628278382" y1="259" y2="259" />
+<line x1="0.08807872094542117" x2="0.08807872094542117" y1="253" y2="265" />
+<line x1="0.09669404628278382" x2="0.09669404628278382" y1="253" y2="265" />
 </g>
 </g>
-<text fill="hsl(105, 100%, 40%)" y="297">Full Decode Persons Array JSON.Ordered Keys.Hermes DecodeWith 206  ms</text>
+<text fill="hsl(100, 100%, 40%)" y="297">Full Decode Persons Array JSON.Ordered Keys.Hermes Decode 186  ms</text>
 <g>
-<title>206  ms ± 5.0 ms</title>
-<rect y="303" rx="5" height="22" width="294.10144996219475" fill="hsl(105, 100%, 80%)" stroke="hsl(105, 100%, 55%)" />
-<g stroke="hsl(105, 100%, 40%)"><line x1="286.93269037767874" x2="301.27020954671076" y1="314" y2="314" />
-<line x1="286.93269037767874" x2="286.93269037767874" y1="308" y2="320" />
-<line x1="301.27020954671076" x2="301.27020954671076" y1="308" y2="320" />
+<title>186  ms ±  14 ms</title>
+<rect y="303" rx="5" height="22" width="264.23925656472295" fill="hsl(100, 100%, 80%)" stroke="hsl(100, 100%, 55%)" />
+<g stroke="hsl(100, 100%, 40%)"><line x1="244.37489123267923" x2="284.10362189676664" y1="314" y2="314" />
+<line x1="244.37489123267923" x2="244.37489123267923" y1="308" y2="320" />
+<line x1="284.10362189676664" x2="284.10362189676664" y1="308" y2="320" />
 </g>
 </g>
-<g fill="hsl(127, 100%, 40%)">
-<text y="352">Full Decode Persons Array JSON.Ordered Keys.Aeson Decode Lazy</text>
-<text y="352" x="797.9793678080994" text-anchor="end">558  ms</text>
-</g>
+<text fill="hsl(120, 100%, 40%)" y="352">Full Decode Persons Array JSON.Ordered Keys.Hermes DecodeWith 182  ms</text>
 <g>
-<title>558  ms ±  99 ms</title>
-<rect y="358" rx="5" height="22" width="797.9793678080994" fill="hsl(127, 100%, 80%)" stroke="hsl(127, 100%, 55%)" />
-<g stroke="hsl(127, 100%, 40%)"><line x1="655.9587356161987" x2="940.0" y1="369" y2="369" />
-<line x1="655.9587356161987" x2="655.9587356161987" y1="363" y2="375" />
-<line x1="940.0" x2="940.0" y1="363" y2="375" />
+<title>182  ms ±  17 ms</title>
+<rect y="358" rx="5" height="22" width="259.0036036708284" fill="hsl(120, 100%, 80%)" stroke="hsl(120, 100%, 55%)" />
+<g stroke="hsl(120, 100%, 40%)"><line x1="234.35190633902013" x2="283.6553010026367" y1="369" y2="369" />
+<line x1="234.35190633902013" x2="234.35190633902013" y1="363" y2="375" />
+<line x1="283.6553010026367" x2="283.6553010026367" y1="363" y2="375" />
 </g>
 </g>
-<g fill="hsl(148, 100%, 40%)">
-<text y="407">Full Decode Persons Array JSON.Ordered Keys.Aeson Decode Strict</text>
-<text y="407" x="608.2930742478362" text-anchor="end">426  ms</text>
+<g fill="hsl(140, 100%, 40%)">
+<text y="407">Full Decode Persons Array JSON.Ordered Keys.Aeson Decode Lazy</text>
+<text y="407" x="796.7125997702655" text-anchor="end">560  ms</text>
 </g>
 <g>
-<title>426  ms ±  34 ms</title>
-<rect y="413" rx="5" height="22" width="608.2930742478362" fill="hsl(148, 100%, 80%)" stroke="hsl(148, 100%, 55%)" />
-<g stroke="hsl(148, 100%, 40%)"><line x1="559.7886739368525" x2="656.7974745588199" y1="424" y2="424" />
-<line x1="559.7886739368525" x2="559.7886739368525" y1="418" y2="430" />
-<line x1="656.7974745588199" x2="656.7974745588199" y1="418" y2="430" />
+<title>560  ms ±  17 ms</title>
+<rect y="413" rx="5" height="22" width="796.7125997702655" fill="hsl(140, 100%, 80%)" stroke="hsl(140, 100%, 55%)" />
+<g stroke="hsl(140, 100%, 40%)"><line x1="772.8056899536776" x2="820.6195095868533" y1="424" y2="424" />
+<line x1="772.8056899536776" x2="772.8056899536776" y1="418" y2="430" />
+<line x1="820.6195095868533" x2="820.6195095868533" y1="418" y2="430" />
 </g>
 </g>
-<text fill="hsl(169, 100%, 40%)" y="462">Full Decode Persons Array JSON.Unordered Keys.Hermes Decode 232  ms</text>
-<g>
-<title>232  ms ± 9.4 ms</title>
-<rect y="468" rx="5" height="22" width="332.0566066621849" fill="hsl(169, 100%, 80%)" stroke="hsl(169, 100%, 55%)" />
-<g stroke="hsl(169, 100%, 40%)"><line x1="318.680243256612" x2="345.43297006775776" y1="479" y2="479" />
-<line x1="318.680243256612" x2="318.680243256612" y1="473" y2="485" />
-<line x1="345.43297006775776" x2="345.43297006775776" y1="473" y2="485" />
-</g>
-</g>
-<text fill="hsl(190, 100%, 40%)" y="517">Full Decode Persons Array JSON.Unordered Keys.Hermes DecodeWith 223  ms</text>
-<g>
-<title>223  ms ±  15 ms</title>
-<rect y="523" rx="5" height="22" width="318.19453918481946" fill="hsl(190, 100%, 80%)" stroke="hsl(190, 100%, 55%)" />
-<g stroke="hsl(190, 100%, 40%)"><line x1="296.67602488880647" x2="339.71305348083246" y1="534" y2="534" />
-<line x1="296.67602488880647" x2="296.67602488880647" y1="528" y2="540" />
-<line x1="339.71305348083246" x2="339.71305348083246" y1="528" y2="540" />
-</g>
-</g>
-<g fill="hsl(211, 100%, 40%)">
-<text y="572">Full Decode Persons Array JSON.Unordered Keys.Aeson Decode Lazy</text>
-<text y="572" x="853.6633183788133" text-anchor="end">597  ms</text>
+<g fill="hsl(160, 100%, 40%)">
+<text y="462">Full Decode Persons Array JSON.Ordered Keys.Aeson Decode Strict</text>
+<text y="462" x="579.0617381965387" text-anchor="end">407  ms</text>
 </g>
 <g>
-<title>597  ms ±  39 ms</title>
-<rect y="578" rx="5" height="22" width="853.6633183788133" fill="hsl(211, 100%, 80%)" stroke="hsl(211, 100%, 55%)" />
-<g stroke="hsl(211, 100%, 40%)"><line x1="797.5389535605141" x2="909.7876831971125" y1="589" y2="589" />
-<line x1="797.5389535605141" x2="797.5389535605141" y1="583" y2="595" />
-<line x1="909.7876831971125" x2="909.7876831971125" y1="583" y2="595" />
+<title>407  ms ±  32 ms</title>
+<rect y="468" rx="5" height="22" width="579.0617381965387" fill="hsl(160, 100%, 80%)" stroke="hsl(160, 100%, 55%)" />
+<g stroke="hsl(160, 100%, 40%)"><line x1="533.4037727448883" x2="624.7197036481891" y1="479" y2="479" />
+<line x1="533.4037727448883" x2="533.4037727448883" y1="473" y2="485" />
+<line x1="624.7197036481891" x2="624.7197036481891" y1="473" y2="485" />
 </g>
 </g>
-<g fill="hsl(232, 100%, 40%)">
-<text y="627">Full Decode Persons Array JSON.Unordered Keys.Aeson Decode Strict</text>
-<text y="627" x="694.9946631880559" text-anchor="end">486  ms</text>
+<text fill="hsl(180, 100%, 40%)" y="517">Full Decode Persons Array JSON.Unordered Keys.Hermes Decode 199  ms</text>
+<g>
+<title>199  ms ±  21 ms</title>
+<rect y="523" rx="5" height="22" width="283.7728032818929" fill="hsl(180, 100%, 80%)" stroke="hsl(180, 100%, 55%)" />
+<g stroke="hsl(180, 100%, 40%)"><line x1="253.98503659051318" x2="313.5605699732726" y1="534" y2="534" />
+<line x1="253.98503659051318" x2="253.98503659051318" y1="528" y2="540" />
+<line x1="313.5605699732726" x2="313.5605699732726" y1="528" y2="540" />
+</g>
+</g>
+<text fill="hsl(200, 100%, 40%)" y="572">Full Decode Persons Array JSON.Unordered Keys.Hermes DecodeWith 221  ms</text>
+<g>
+<title>221  ms ± 8.6 ms</title>
+<rect y="578" rx="5" height="22" width="314.3445480974856" fill="hsl(200, 100%, 80%)" stroke="hsl(200, 100%, 55%)" />
+<g stroke="hsl(200, 100%, 40%)"><line x1="302.0565210998715" x2="326.6325750950997" y1="589" y2="589" />
+<line x1="302.0565210998715" x2="302.0565210998715" y1="583" y2="595" />
+<line x1="326.6325750950997" x2="326.6325750950997" y1="583" y2="595" />
+</g>
+</g>
+<g fill="hsl(220, 100%, 40%)">
+<text y="627">Full Decode Persons Array JSON.Unordered Keys.Aeson Decode Lazy</text>
+<text y="627" x="872.0790295870238" text-anchor="end">613  ms</text>
 </g>
 <g>
-<title>486  ms ±  57 ms</title>
-<rect y="633" rx="5" height="22" width="694.9946631880559" fill="hsl(232, 100%, 80%)" stroke="hsl(232, 100%, 55%)" />
-<g stroke="hsl(232, 100%, 40%)"><line x1="613.8187577461104" x2="776.1705686300015" y1="644" y2="644" />
-<line x1="613.8187577461104" x2="613.8187577461104" y1="638" y2="650" />
-<line x1="776.1705686300015" x2="776.1705686300015" y1="638" y2="650" />
+<title>613  ms ±  48 ms</title>
+<rect y="633" rx="5" height="22" width="872.0790295870238" fill="hsl(220, 100%, 80%)" stroke="hsl(220, 100%, 55%)" />
+<g stroke="hsl(220, 100%, 40%)"><line x1="804.1580591740476" x2="940.0" y1="644" y2="644" />
+<line x1="804.1580591740476" x2="804.1580591740476" y1="638" y2="650" />
+<line x1="940.0" x2="940.0" y1="638" y2="650" />
 </g>
 </g>
-<text fill="hsl(254, 100%, 40%)" y="682">Partial Decode Twitter JSON.Hermes Decode 1.01 ms</text>
+<g fill="hsl(240, 100%, 40%)">
+<text y="682">Full Decode Persons Array JSON.Unordered Keys.Aeson Decode Strict</text>
+<text y="682" x="753.1076014476306" text-anchor="end">529  ms</text>
+</g>
 <g>
-<title>1.01 ms ±  58 μs</title>
-<rect y="688" rx="5" height="22" width="1.447897711554011" fill="hsl(254, 100%, 80%)" stroke="hsl(254, 100%, 55%)" />
-<g stroke="hsl(254, 100%, 40%)"><line x1="1.3648787505632793" x2="1.5309166725447427" y1="699" y2="699" />
-<line x1="1.3648787505632793" x2="1.3648787505632793" y1="693" y2="705" />
-<line x1="1.5309166725447427" x2="1.5309166725447427" y1="693" y2="705" />
+<title>529  ms ±  48 ms</title>
+<rect y="688" rx="5" height="22" width="753.1076014476306" fill="hsl(240, 100%, 80%)" stroke="hsl(240, 100%, 55%)" />
+<g stroke="hsl(240, 100%, 40%)"><line x1="684.3443277843917" x2="821.8708751108695" y1="699" y2="699" />
+<line x1="684.3443277843917" x2="684.3443277843917" y1="693" y2="705" />
+<line x1="821.8708751108695" x2="821.8708751108695" y1="693" y2="705" />
 </g>
 </g>
-<text fill="hsl(275, 100%, 40%)" y="737">Partial Decode Twitter JSON.Hermes DecodeWith 921  μs</text>
+<text fill="hsl(260, 100%, 40%)" y="737">Partial Decode Twitter JSON.Hermes Decode 800  μs</text>
 <g>
-<title>921  μs ±  84 μs</title>
-<rect y="743" rx="5" height="22" width="1.3168640813703023" fill="hsl(275, 100%, 80%)" stroke="hsl(275, 100%, 55%)" />
-<g stroke="hsl(275, 100%, 40%)"><line x1="1.1974967274639283" x2="1.4362314352766763" y1="754" y2="754" />
-<line x1="1.1974967274639283" x2="1.1974967274639283" y1="748" y2="760" />
-<line x1="1.4362314352766763" x2="1.4362314352766763" y1="748" y2="760" />
+<title>800  μs ±  66 μs</title>
+<rect y="743" rx="5" height="22" width="1.1382585327210175" fill="hsl(260, 100%, 80%)" stroke="hsl(260, 100%, 55%)" />
+<g stroke="hsl(260, 100%, 40%)"><line x1="1.0437234687707129" x2="1.2327935966713222" y1="754" y2="754" />
+<line x1="1.0437234687707129" x2="1.0437234687707129" y1="748" y2="760" />
+<line x1="1.2327935966713222" x2="1.2327935966713222" y1="748" y2="760" />
 </g>
 </g>
-<text fill="hsl(296, 100%, 40%)" y="792">Partial Decode Twitter JSON.Aeson Decode Lazy 13.9 ms</text>
+<text fill="hsl(280, 100%, 40%)" y="792">Partial Decode Twitter JSON.Hermes DecodeWith 696  μs</text>
 <g>
-<title>13.9 ms ± 350 μs</title>
-<rect y="798" rx="5" height="22" width="19.87890566504996" fill="hsl(296, 100%, 80%)" stroke="hsl(296, 100%, 55%)" />
-<g stroke="hsl(296, 100%, 40%)"><line x1="19.379109128415525" x2="20.378702201684394" y1="809" y2="809" />
-<line x1="19.379109128415525" x2="19.379109128415525" y1="803" y2="815" />
-<line x1="20.378702201684394" x2="20.378702201684394" y1="803" y2="815" />
+<title>696  μs ±  22 μs</title>
+<rect y="798" rx="5" height="22" width="0.9901182915083465" fill="hsl(280, 100%, 80%)" stroke="hsl(280, 100%, 55%)" />
+<g stroke="hsl(280, 100%, 40%)"><line x1="0.9588330236308831" x2="1.02140355938581" y1="809" y2="809" />
+<line x1="0.9588330236308831" x2="0.9588330236308831" y1="803" y2="815" />
+<line x1="1.02140355938581" x2="1.02140355938581" y1="803" y2="815" />
 </g>
 </g>
-<text fill="hsl(317, 100%, 40%)" y="847">Partial Decode Twitter JSON.Aeson Decode Strict 16.9 ms</text>
+<text fill="hsl(300, 100%, 40%)" y="847">Partial Decode Twitter JSON.Aeson Decode Lazy 13.7 ms</text>
 <g>
-<title>16.9 ms ± 594 μs</title>
-<rect y="853" rx="5" height="22" width="24.091749030771954" fill="hsl(317, 100%, 80%)" stroke="hsl(317, 100%, 55%)" />
-<g stroke="hsl(317, 100%, 40%)"><line x1="23.242704776431918" x2="24.94079328511199" y1="864" y2="864" />
-<line x1="23.242704776431918" x2="23.242704776431918" y1="858" y2="870" />
-<line x1="24.94079328511199" x2="24.94079328511199" y1="858" y2="870" />
+<title>13.7 ms ± 924 μs</title>
+<rect y="853" rx="5" height="22" width="19.503231613688342" fill="hsl(300, 100%, 80%)" stroke="hsl(300, 100%, 55%)" />
+<g stroke="hsl(300, 100%, 40%)"><line x1="18.188508841018336" x2="20.81795438635835" y1="864" y2="864" />
+<line x1="18.188508841018336" x2="18.188508841018336" y1="858" y2="870" />
+<line x1="20.81795438635835" x2="20.81795438635835" y1="858" y2="870" />
 </g>
 </g>
-<text fill="hsl(338, 100%, 40%)" y="902">Partial Decode Twitter JSON.Waargonaut Decode Attoparsec 8.33 ms</text>
+<text fill="hsl(320, 100%, 40%)" y="902">Partial Decode Twitter JSON.Aeson Decode Strict 17.2 ms</text>
 <g>
-<title>8.33 ms ± 291 μs</title>
-<rect y="908" rx="5" height="22" width="11.90636769025086" fill="hsl(338, 100%, 80%)" stroke="hsl(338, 100%, 55%)" />
-<g stroke="hsl(338, 100%, 40%)"><line x1="11.489786478352507" x2="12.322948902149214" y1="919" y2="919" />
-<line x1="11.489786478352507" x2="11.489786478352507" y1="913" y2="925" />
-<line x1="12.322948902149214" x2="12.322948902149214" y1="913" y2="925" />
+<title>17.2 ms ± 1.5 ms</title>
+<rect y="908" rx="5" height="22" width="24.484750782166326" fill="hsl(320, 100%, 80%)" stroke="hsl(320, 100%, 55%)" />
+<g stroke="hsl(320, 100%, 40%)"><line x1="22.295106382880196" x2="26.674395181452457" y1="919" y2="919" />
+<line x1="22.295106382880196" x2="22.295106382880196" y1="913" y2="925" />
+<line x1="26.674395181452457" x2="26.674395181452457" y1="913" y2="925" />
+</g>
+</g>
+<text fill="hsl(340, 100%, 40%)" y="957">Partial Decode Twitter JSON.Waargonaut Decode Attoparsec 8.58 ms</text>
+<g>
+<title>8.58 ms ± 724 μs</title>
+<rect y="963" rx="5" height="22" width="12.209616799752203" fill="hsl(340, 100%, 80%)" stroke="hsl(340, 100%, 55%)" />
+<g stroke="hsl(340, 100%, 40%)"><line x1="11.180056962708214" x2="13.239176636796191" y1="974" y2="974" />
+<line x1="11.180056962708214" x2="11.180056962708214" y1="968" y2="980" />
+<line x1="13.239176636796191" x2="13.239176636796191" y1="968" y2="980" />
 </g>
 </g>
 </g>

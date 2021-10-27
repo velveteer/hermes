@@ -1,4 +1,5 @@
 {-# OPTIONS_HADDOCK show-extensions #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -80,6 +81,7 @@ import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Foreign as T
 import qualified Data.Time as Time
@@ -216,25 +218,25 @@ data HermesException =
 -- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
   HError
-    { path        :: !String
+    { path        :: !Text
     -- ^ The path to the current element determined by the decoder.
-    , errorMsg    :: !String
+    , errorMsg    :: !Text
     -- ^ An error message.
-    , docLocation :: !String
+    , docLocation :: !Text
     -- ^ Truncated location of the simdjson document iterator.
-    , docDebug    :: !String
+    , docDebug    :: !Text
     -- ^ Debug information from simdjson::document.
     } deriving (Eq, Show, Generic, NFData)
 
 -- | Re-throw an exception caught from the simdjson library.
-throwSIMD :: String -> Decoder a
+throwSIMD :: Text -> Decoder a
 throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
 
 -- | Throw an IO exception in the `Decoder` context.
-throwHermes :: String -> Decoder a
+throwHermes :: Text -> Decoder a
 throwHermes msg = buildHError msg >>= liftIO . throwIO . InternalException
 
-buildHError :: String -> Decoder HError
+buildHError :: Text -> Decoder HError
 buildHError msg = withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
   path' <- run $ asks hPath
@@ -246,9 +248,9 @@ buildHError msg = withRunInIO $ \run -> do
         withForeignPtr strFPtr $ \dbStrPtr -> do
           liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
           len <- fmap fromIntegral . liftIO $ peek lenPtr
-          debugStr <- peekCStringLen (dbStrPtr, len)
+          debugStr <- liftIO $ T.peekCStringLen (dbStrPtr, len)
           locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
-          pure $ HError path' msg (Prelude.take 100 locStr) debugStr
+          pure $ HError path' msg (T.pack $ Prelude.take 100 locStr) debugStr
 
 handleError :: ErrPtr -> Decoder ()
 handleError errPtr = do
@@ -257,7 +259,7 @@ handleError errPtr = do
   then pure ()
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
-    throwSIMD errStr
+    throwSIMD $ T.pack errStr
 
 data SIMDErrorCode =
     SUCCESS
@@ -387,7 +389,7 @@ iterateOverFields fk fv iterPtr =
   allocaValue $ \valPtr ->
   go DList.empty keyPtr lenPtr valPtr errPtr
   where
-    go acc keyPtr lenPtr valPtr errPtr = do
+    go !acc !keyPtr !lenPtr !valPtr !errPtr = do
       isOver <- fmap toBool . liftIO $ objectIterIsDoneImpl iterPtr
       if not isOver
         then do
@@ -396,7 +398,7 @@ iterateOverFields fk fv iterPtr =
             kLen <- fmap fromIntegral . liftIO $ peek lenPtr
             kStr <- liftIO $ peek keyPtr
             keyTxt <- parseText (kStr, kLen)
-            withPath (T.unpack keyTxt) $ do
+            withPath keyTxt $ do
               k <- fk keyTxt
               v <- fv valPtr
               liftIO $ objectIterMoveNextImpl iterPtr
@@ -404,18 +406,18 @@ iterateOverFields fk fv iterPtr =
         else
           pure $ DList.toList acc
 
-withUnorderedField :: (Value -> Decoder a) -> Object -> String -> Decoder a
+withUnorderedField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
-  withCString key $ \cstr -> run $
+  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath key $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
 
-withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> String -> Decoder (Maybe a)
+withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> Text -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
-  withCString key $ \cstr -> run $
+  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath key $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
@@ -424,16 +426,16 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
 
-withField :: (Value -> Decoder a) -> Object -> String -> Decoder a
+withField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
-  withCString key $ \cstr -> run $
+  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
     alloca $ \errPtr -> withPath key $ do
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
 
-withPath :: String -> Decoder a -> Decoder a
+withPath :: Text -> Decoder a -> Decoder a
 withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
 
 getInt :: Value -> Decoder Int
@@ -465,7 +467,7 @@ scientific = withRawByteString parseScientific
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
-  = either (\err -> throwHermes $ "failed to parse Scientific: " <> err) pure
+  = either (\err -> throwHermes $ "failed to parse Scientific: " <> T.pack err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
 
 getBool :: Value -> Decoder Bool
@@ -500,7 +502,7 @@ parseText :: CStringLen -> Decoder Text
 parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
-      run . throwHermes $ show err
+      run . throwHermes $ T.pack $ show err
 
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
@@ -554,7 +556,7 @@ iterateOverArray f iterPtr =
   allocaValue $ \valPtr ->
   go DList.empty valPtr errPtr
   where
-    go acc valPtr errPtr = do
+    go !acc !valPtr !errPtr = do
       isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver
         then do
@@ -568,17 +570,17 @@ iterateOverArray f iterPtr =
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
-atKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
+atKey :: Text -> (Value -> Decoder a) -> Object -> Decoder a
 atKey key parser obj = withUnorderedField parser obj key
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
-atOptionalKey :: String -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
+atOptionalKey :: Text -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
 atOptionalKey key parser obj = withUnorderedOptionalField parser obj key
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
-atOrderedKey :: String -> (Value -> Decoder a) -> Object -> Decoder a
+atOrderedKey :: Text -> (Value -> Decoder a) -> Object -> Decoder a
 atOrderedKey key parser obj = withField parser obj key
 
 -- | Parse a homogenous JSON array into a Haskell list.
@@ -643,7 +645,7 @@ double = getDouble
 runAtto :: AT.Parser a -> Text -> Decoder a
 runAtto p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
-    Left err -> throwHermes $ "could not parse date: " ++ err
+    Left err -> throwHermes $ "could not parse date: " <> T.pack err
     Right r  -> pure r
 
 -- | Parse a date of the form @[+,-]YYYY-MM-DD@.
@@ -704,7 +706,7 @@ data HermesEnv =
   HermesEnv
     { hParser   :: !(ForeignPtr SIMDParser)
     , hDocument :: !(ForeignPtr SIMDDocument)
-    , hPath     :: !String
+    , hPath     :: !Text
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to
