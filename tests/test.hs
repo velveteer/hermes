@@ -8,6 +8,7 @@ import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import qualified Data.Time as Time
@@ -127,7 +128,7 @@ genFriend = Friend
 genEmployer :: Gen Employer
 genEmployer = Employer
   <$> Gen.string (Range.linear 0 1000) Gen.unicode
-  <*> Gen.realFrac_ (Range.constant 0 1000)
+  <*> genScientific
 
 decodeEmployer :: Value -> Decoder Employer
 decodeEmployer = withObject $ \obj ->
@@ -160,3 +161,12 @@ timeOfDayGenerator =
   --   https://github.com/bos/aeson/issues/500
   fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000)
     $ Gen.realFrac_ (Range.constant 0 86400)
+
+genScientific :: Gen Scientific
+genScientific =
+  fmap Sci.fromFloatDigits $
+    Gen.double $
+      Range.linearFracFrom
+        0
+        (-1000000000000000000000000)
+        1000000000000000000000000
