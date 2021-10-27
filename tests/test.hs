@@ -10,6 +10,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
+import qualified Data.Time as Time
 import           GHC.Generics (Generic)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
@@ -53,6 +54,7 @@ data Person =
     , favoriteFruit :: Text
     , employer      :: Employer
     , mapOfInts     :: Map KeyType Int
+    , utcTimeField  :: Time.UTCTime
     } deriving (Eq, Show, Generic, A.ToJSON)
 
 newtype KeyType = KeyType Text
@@ -88,6 +90,7 @@ decodePerson = withObject $ \obj ->
     <*> atKey "favoriteFruit" text obj
     <*> atKey "employer" decodeEmployer obj
     <*> (Map.fromList <$> atKey "mapOfInts" (objectAsKeyValues (pure . KeyType) int) obj)
+    <*> atKey "utcTimeField" utcTime obj
 
 decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->
@@ -114,6 +117,7 @@ genPerson = Person
   <*> Gen.map (Range.linear 0 100)
       ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
            <*> (Gen.int (Range.linear 0 10000)))
+  <*> utcTimeGenerator
 
 genFriend :: Gen Friend
 genFriend = Friend
@@ -130,3 +134,29 @@ decodeEmployer = withObject $ \obj ->
   Employer
     <$> atKey "inefficient" string obj
     <*> atKey "exp" scientific obj
+
+utcTimeGenerator :: Gen Time.UTCTime
+utcTimeGenerator =
+  Time.UTCTime
+    <$> dayGenerator
+    <*> timeOfDayGenerator
+
+dayGenerator :: Gen Time.Day
+dayGenerator =
+  Time.fromGregorian
+    <$> Gen.integral (Range.linearFrom 2020 1980 2060)
+    <*> Gen.integral (Range.constant 1 12)
+    <*> Gen.integral (Range.constant 1 28)
+
+timeOfDayGenerator :: Gen Time.DiffTime
+timeOfDayGenerator =
+  -- Although the UTCTime docs allow for leap seconds to be represented and
+  -- Aeson is happy to *serialize* values with leap seconds, we will fail to
+  -- parse values with leap seconds. If we ever need to support decoding times
+  -- with leap seconds, we will need to do some work.
+  --
+  -- This issue discusses the UTCTime serialization/deserialization asymmetry:
+  --
+  --   https://github.com/bos/aeson/issues/500
+  fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000)
+    $ Gen.realFrac_ (Range.constant 0 86400)

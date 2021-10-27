@@ -33,6 +33,14 @@ module Data.Hermes
   , list
   , nullable
   , objectAsKeyValues
+  , day
+  , month
+  , quarter
+  , timeOfDay
+  , timeZone
+  , localTime
+  , utcTime
+  , zonedTime
   -- * Environment creation
   , mkHermesEnv
   , mkHermesEnv_
@@ -62,6 +70,8 @@ import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.IO.Unlift (withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
+import qualified Data.Attoparsec.Text as AT
+import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Internal as BS
@@ -72,6 +82,10 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding.Error as T
 import qualified Data.Text.Foreign as T
+import qualified Data.Time as Time
+import qualified Data.Time.Calendar.Month.Compat as Time
+import qualified Data.Time.Calendar.Quarter.Compat as Time
+import qualified Data.Time.LocalTime as Local
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
 import           UnliftIO.Exception
@@ -544,11 +558,11 @@ iterateOverArray f iterPtr =
       isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver
         then do
-            liftIO $ arrayIterGetCurrentImpl iterPtr valPtr errPtr
-            handleError errPtr
-            result <- f valPtr
-            liftIO $ arrayIterMoveNextImpl iterPtr
-            go (acc <> DList.singleton result) valPtr errPtr
+          liftIO $ arrayIterGetCurrentImpl iterPtr valPtr errPtr
+          handleError errPtr
+          result <- f valPtr
+          liftIO $ arrayIterMoveNextImpl iterPtr
+          go (acc <> DList.singleton result) valPtr errPtr
         else
           pure $ DList.toList acc
 
@@ -624,6 +638,59 @@ bool = getBool
 -- | Parse a JSON number into a Haskell Double.
 double :: Value -> Decoder Double
 double = getDouble
+
+-- | Run an attoparsec text parser as a hermes decoder.
+runAtto :: AT.Parser a -> Text -> Decoder a
+runAtto p t =
+  case AT.parseOnly (p <* AT.endOfInput) t of
+    Left err -> throwHermes $ "could not parse date: " ++ err
+    Right r  -> pure r
+
+-- | Parse a date of the form @[+,-]YYYY-MM-DD@.
+day :: Value -> Decoder Time.Day
+day = withText $ runAtto ATime.day
+
+-- | Parse a date of the form @[+,-]YYYY-MM@.
+month :: Value -> Decoder Time.Month
+month = withText $ runAtto ATime.month
+
+-- | Parse a date of the form @[+,-]YYYY-QN@.
+quarter :: Value -> Decoder Time.Quarter
+quarter = withText $ runAtto ATime.quarter
+
+-- | Parse a time of the form @HH:MM[:SS[.SSS]]@.
+timeOfDay :: Value -> Decoder Local.TimeOfDay
+timeOfDay = withText $ runAtto ATime.timeOfDay
+
+-- | Parse a time zone, and return 'Nothing' if the offset from UTC is
+-- zero. (This makes some speedups possible.)
+timeZone :: Value -> Decoder (Maybe Local.TimeZone)
+timeZone = withText $ runAtto ATime.timeZone
+
+-- | Parse a date and time, of the form @YYYY-MM-DD HH:MM[:SS[.SSS]]@.
+-- The space may be replaced with a @T@.  The number of seconds is optional
+-- and may be followed by a fractional component.
+localTime :: Value -> Decoder Local.LocalTime
+localTime = withText $ runAtto ATime.localTime
+
+-- | Behaves as 'zonedTime', but converts any time zone offset into a
+-- UTC time.
+utcTime :: Value -> Decoder Time.UTCTime
+utcTime = withText $ runAtto ATime.utcTime
+
+-- | Parse a date with time zone info. Acceptable formats:
+--
+-- @YYYY-MM-DD HH:MM Z@
+-- @YYYY-MM-DD HH:MM:SS Z@
+-- @YYYY-MM-DD HH:MM:SS.SSS Z@
+--
+-- The first space may instead be a @T@, and the second space is
+-- optional.  The @Z@ represents UTC.  The @Z@ may be replaced with a
+-- time zone offset of the form @+0000@ or @-08:00@, where the first
+-- two digits are hours, the @:@ is optional and the second two digits
+-- (also optional) are minutes.
+zonedTime :: Value -> Decoder Local.ZonedTime
+zonedTime = withText $ runAtto ATime.zonedTime
 
 -- Decoding Types and Functions
 

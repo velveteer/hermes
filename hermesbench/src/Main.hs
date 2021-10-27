@@ -25,6 +25,7 @@ import           Data.Hermes
 main :: IO ()
 main = defaultMain
   [ withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
+    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Small Map Decode"
       [ bench "Hermes Decode" $
           nfIO (flip decode (objectAsKeyValues pure int) =<< input)
