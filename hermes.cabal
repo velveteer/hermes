@@ -9,6 +9,21 @@ author:             Josh Miller
 maintainer:         notjoshmiller@gmail.com
 extra-source-files: cbits, CHANGELOG.md
 
+flag strict
+  description: Turn on strict GHC options
+  default: False
+  manual: True
+
+flag native_comp
+  description: Target native architecture for C++ compiler
+  default: True
+  manual: True
+
+flag debug
+  description: Enable C++ debug support
+  default: False
+  manual: True
+
 library
   exposed-modules: 
     Data.Hermes
@@ -18,10 +33,10 @@ library
     base               >= 4.14.1 && < 4.15,
     bytestring         >= 0.10.12 && < 0.11,
     deepseq            >= 1.4.4 && < 1.5,
+    dlist              >= 0.8 && < 1.1,
     scientific         >= 0.3.6 && < 0.4,
     text               >= 1.2.4 && < 1.3,
     transformers       >= 0.5.6 && < 0.6,
-    dlist              >= 0.8 && < 1.1,
     time               >= 1.9.3 && < 1.10,
     time-compat        >= 1.9.5 && < 1.10,
     unliftio           >= 0.2.14 && < 0.3,
@@ -29,11 +44,39 @@ library
 
   hs-source-dirs:   src
   default-language: Haskell2010
-  ghc-options: -Wall -O2
+  if flag(strict)
+    ghc-options: 
+      -Wall 
+      -Werror 
+      -Wcompat 
+      -Widentities 
+      -Wincomplete-uni-patterns 
+      -Wincomplete-record-updates 
+      -Wmissing-export-lists 
+      -Wno-implicit-prelude 
+      -Wno-safe 
+      -Wno-unsafe 
+      -Wnoncanonical-monad-instances 
+      -Wredundant-constraints 
+      -Wpartial-fields 
+      -Wmissed-specialisations 
+      -Wunused-packages 
+      -O2
+  else
+    ghc-options: -O2 -Wall
   cxx-sources: 
     cbits/lib.cpp 
     cbits/simdjson.cpp
-  cxx-options: -std=c++17 -DNDEBUG
+  if flag(native_comp)
+    if flag (debug)
+      cxx-options: -std=c++17 -march=native -O3
+    else
+      cxx-options: -std=c++17 -DNDEBUG -march=native -O3
+  else
+    if flag (debug)
+      cxx-options: -std=c++17 -O3
+    else
+      cxx-options: -std=c++17 -DNDEBUG -O3
   include-dirs: 
     cbits
   install-includes: 
