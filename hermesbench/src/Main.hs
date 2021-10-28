@@ -40,7 +40,7 @@ main = defaultMain
       ]
   , withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
-    bgroup "Full Decode Persons Array JSON"
+    bgroup "Full Decode Persons Array"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
           nfIO (flip decode (list decodePerson) =<< input)
@@ -68,7 +68,7 @@ main = defaultMain
     ]
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
-    bgroup "Partial Decode Twitter JSON"
+    bgroup "Partial Decode Twitter"
     [ bench "Hermes Decode" $
         nfIO (flip decode decodeTwitter =<< input)
     , bench "Hermes DecodeWith" $

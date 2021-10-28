@@ -14,11 +14,11 @@ This library exposes functions that can be used to write decoders for JSON docum
 
 > You are working with stable JSON APIs which have a consistent layout and JSON dialect.
 
-With this in mind, `Data.Hermes` parsers can potentially decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. This is because `Data.Aeson.FromJSON` must convert the entire document into a DOM, which means memory increases linearly with the input size. The On Demand API does not have this constraint because it iterates over the JSON string in memory without parsing the entire document up front. 
+With this in mind, `Data.Hermes` parsers can potentially decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. This is because `Data.Aeson.FromJSON` converts the entire document into a `Data.Aeson.Value`, which means memory usage increases linearly with the input size. The `simdjson::ondemand` API does not have this constraint because it iterates over the JSON string in memory without constructing any abstract representation.
 
 ## Usage
 
-This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. Running a decoder can throw IO exceptions, which you can catch as the `HermesException` type. Most simdjson exceptions will be caught and returned with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
+This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the tests and benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. `simdjson::ondemand` exceptions will be caught and re-thrown with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
 
 ```haskell
 personDecoder :: Value -> Decoder Person
@@ -32,9 +32,9 @@ personDecoder = withObject $ \obj ->
     <*> atKey "picture" (nullable text) obj
     <*> atKey "latitude" scientific obj
 
--- Decode a strict ByteString via `decode`:
-parsePersons :: ByteString -> IO [Person]
-parsePersons bs = decode bs (list personDecoder)
+-- Decode a strict ByteString.
+decodePersons :: ByteString -> Either HermesException [Person]
+decodePersons bs = decodeEither bs $ list personDecoder
 ```
 
 It looks a lot like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
@@ -57,7 +57,7 @@ We benchmark decoding a very small object into a Map, full decoding of a large-i
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * If you know the key ordering of the JSON then you can use `atOrderedKey` instead of `atKey`. This is faster but it cannot handle missing keys.
-* You can improve performance by holding onto your own `HermesEnv` and using `decodeWith` instead of `decode`. This ensures the simdjson instances are allocated by the caller who can hold a reference to them, allowing re-use and preventing the garbage collector from running their finalizers. `decode` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
+* You can improve performance by holding onto your own `HermesEnv` and using `decodeWith`/`decodeEitherWith` instead of `decode`/`decodeEither`. This ensures the simdjson instances are allocated by the caller who can hold a reference to them, allowing re-use and preventing the garbage collector from running their finalizers. `decode` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
 
 ## Limitations
 
@@ -65,9 +65,11 @@ Because the On Demand API uses a forward-only iterator (except for object fields
 
 Further work is coming to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 
 
-Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and token scanning), it is possible to parse an invalid JSON document but not realize it until later. Keep this is mind if you need the entire document to be validated up front, in which case a DOM API is a better fit for you.
+Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and basic well-formed checks), it is possible to parse an invalid JSON document but not realize it until later. If you need the entire document to be validated up front then a DOM parser is a better fit for you.
 
 > The On Demand approach is less safe than DOM: we only validate the components of the JSON document that are used and it is possible to begin ingesting an invalid document only to find out later that the document is invalid. Are you fine ingesting a large JSON document that starts with well formed JSON but ends with invalid JSON content?
+
+This library currently cannot decode scalar documents, e.g. a single string or number as a JSON document. 
 
 ## Portability
 
@@ -76,4 +78,3 @@ Per the `simdjson` documentation:
 > A recent compiler (LLVM clang6 or better, GNU GCC 7.4 or better, Xcode 11 or better) on a 64-bit (PPC, ARM or x64 Intel/AMD) POSIX systems such as macOS, freeBSD or Linux. We require that the compiler supports the C++11 standard or better.
 
 This library has not yet been tested on Windows.
-
