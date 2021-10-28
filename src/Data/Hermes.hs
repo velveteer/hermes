@@ -656,6 +656,8 @@ runAtto p t =
     Left err -> throwHermes $ "could not parse date: " <> T.pack err
     Right r  -> pure r
 
+-- | ISO 8601 Compatibility
+
 -- | Parse a date of the form @[+,-]YYYY-MM-DD@.
 day :: Value -> Decoder Time.Day
 day = withText $ runAtto ATime.day
@@ -678,13 +680,12 @@ timeZone :: Value -> Decoder (Maybe Local.TimeZone)
 timeZone = withText $ runAtto ATime.timeZone
 
 -- | Parse a date and time, of the form @YYYY-MM-DD HH:MM[:SS[.SSS]]@.
--- The space may be replaced with a @T@.  The number of seconds is optional
+-- The space may be replaced with a @T@. The number of seconds is optional
 -- and may be followed by a fractional component.
 localTime :: Value -> Decoder Local.LocalTime
 localTime = withText $ runAtto ATime.localTime
 
--- | Behaves as 'zonedTime', but converts any time zone offset into a
--- UTC time.
+-- | Behaves as 'zonedTime', but converts any time zone offset into a UTC time.
 utcTime :: Value -> Decoder Time.UTCTime
 utcTime = withText $ runAtto ATime.utcTime
 
