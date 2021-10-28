@@ -1,8 +1,11 @@
 {-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -65,10 +68,11 @@ module Data.Hermes
   , ArrayIter
   ) where
 
+import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData)
 import           Control.Monad ((>=>))
-import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad.IO.Unlift (withRunInIO)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
 import qualified Data.Attoparsec.Text as AT
@@ -213,7 +217,8 @@ data HermesException =
     -- ^ An exception thrown from the simdjson library.
   | InternalException HError
     -- ^ An exception thrown from an internal library function.
-  deriving (Eq, Show, Generic, NFData, Exception)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Exception, NFData)
 
 -- | Record containing all pertinent information for troubleshooting an exception.
 data HError =
@@ -226,7 +231,9 @@ data HError =
     -- ^ Truncated location of the simdjson document iterator.
     , docDebug    :: !Text
     -- ^ Debug information from simdjson::document.
-    } deriving (Eq, Show, Generic, NFData)
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (NFData)
 
 -- | Re-throw an exception caught from the simdjson library.
 throwSIMD :: Text -> Decoder a
@@ -237,10 +244,10 @@ throwHermes :: Text -> Decoder a
 throwHermes msg = buildHError msg >>= liftIO . throwIO . InternalException
 
 buildHError :: Text -> Decoder HError
-buildHError msg = withRunInIO $ \run -> do
+buildHError msg = Decoder $ withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
   path' <- run $ asks hPath
-  alloca $ \errPtr -> run $
+  alloca $ \errPtr -> run . runDecoder $
     alloca $ \locStrPtr ->
     alloca $ \lenPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
@@ -293,7 +300,7 @@ data SIMDErrorCode =
   | SCALAR_DOCUMENT_AS_VALUE
   | OUT_OF_BOUNDS
   | NUM_ERROR_CODES
-  deriving (Eq, Show, Bounded, Enum)
+  deriving stock (Eq, Show, Bounded, Enum)
 
 allocaValue :: (Value -> Decoder a) -> Decoder a
 allocaValue f = allocaBytes 24 $ \val -> f (Value val)
@@ -348,11 +355,11 @@ withInputPointer pStrFPtr f =
 
 withDocument :: (Value -> Decoder a) -> InputBuffer -> Decoder a
 withDocument f inputPtr =
-  allocaValue $ \valPtr -> withRunInIO $ \run ->
+  allocaValue $ \valPtr -> Decoder $ withRunInIO $ \run ->
   alloca $ \errPtr -> run $ do
     docFPtr <- asks hDocument
     parserFPtr <- asks hParser
-    withParserPointer parserFPtr $ \parserPtr ->
+    runDecoder . withParserPointer parserFPtr $ \parserPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
         liftIO $ getIterator parserPtr inputPtr docPtr errPtr
         handleError errPtr
@@ -436,7 +443,8 @@ withField f objPtr key = withRunInIO $ \run ->
     f vPtr
 
 withPath :: Text -> Decoder a -> Decoder a
-withPath key = local (\st -> st { hPath = hPath st <> "." <> key })
+withPath key =
+  Decoder . local (\st -> st { hPath = hPath st <> "." <> key }) . runDecoder
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
@@ -696,8 +704,16 @@ zonedTime = withText $ runAtto ATime.zonedTime
 
 -- Decoding Types and Functions
 
--- | A Decoder is intended to be run in IO and will throw IO exceptions.
-type Decoder a = ReaderT HermesEnv IO a
+-- | A Decoder is intended to be run in IO and will throw exceptions.
+newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+
+instance Alternative Decoder where
+  empty = throwHermes "unspecified error"
+  ad <|> bd = ad `catch` (\(_err :: HermesException) -> bd)
+
+instance MonadFail Decoder where
+  fail = throwHermes . T.pack
 
 -- | Contains foreign references to the allocated simdjson::parser
 -- and simdjson::document. Also maintains a path string that is updated
@@ -756,7 +772,7 @@ decode :: ByteString -> (Value -> Decoder a) -> IO a
 decode bs d = do
   hEnv      <- mkHermesEnv_
   paddedStr <- mkSIMDPaddedStrView bs
-  flip runReaderT hEnv $
+  flip runReaderT hEnv . runDecoder $
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr
 
@@ -774,7 +790,7 @@ decodeEither bs d = Unsafe.unsafePerformIO . try $ decode bs d
 decodeWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> IO a
 decodeWith env bs d = do
   paddedStr <- mkSIMDPaddedStrView bs
-  flip runReaderT env $
+  flip runReaderT env . runDecoder $
     withInputPointer paddedStr $ \inputPtr ->
       withDocument d inputPtr
 
