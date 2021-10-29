@@ -49,6 +49,14 @@ extern "C" {
     doc.get_value().tie(out, error);
   }
 
+  void at_pointer(
+      const char *pointer,
+      ondemand::document &doc, 
+      ondemand::value &out, 
+      error_code &error) {
+    doc.at_pointer(pointer).tie(out, error);
+  }
+
   void get_object_from_value(
       ondemand::value &val, 
       ondemand::object &out, 

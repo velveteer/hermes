@@ -25,6 +25,8 @@ module Data.Hermes
   , atKey
   , atOptionalKey
   , atOrderedKey
+  -- * JSON pointer decoder
+  , atPointer
     -- * Value decoders
   , bool
   , char
@@ -143,6 +145,9 @@ foreign import ccall unsafe "get_iterator" getIterator
 
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
   :: Document -> Value -> ErrPtr -> IO ()
+
+foreign import ccall unsafe "at_pointer" atPointerImpl
+  :: CString -> Document -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
   :: Value -> Object -> ErrPtr -> IO ()
@@ -365,6 +370,21 @@ withDocument f inputPtr =
         liftIO $ getDocumentValueImpl docPtr valPtr errPtr
         handleError errPtr
         f valPtr
+
+-- | Decode a value at the particular JSON pointer following RFC 6901.
+-- Be careful where you use this because it rewinds the document on each
+-- successive call.
+atPointer :: Text -> (Value -> Decoder a) -> Decoder a
+atPointer jptr f = Decoder $ do
+  docFPtr <- asks hDocument
+  runDecoder . withDocumentPointer docFPtr $ \docPtr ->
+    withRunInIO $ \run ->
+      BSC.useAsCString (T.encodeUtf8 jptr) $ \cstr -> run $
+        allocaValue $ \vPtr ->
+          alloca $ \errPtr -> withPath ("Pointer: " <> jptr) $ do
+          liftIO $ atPointerImpl cstr docPtr vPtr errPtr
+          handleError errPtr
+          f vPtr
 
 -- | Helper to work with an Object parsed from a Value.
 withObject :: (Object -> Decoder a) -> Value -> Decoder a
@@ -767,14 +787,18 @@ mkSIMDPaddedStrView input = mask_ $ do
 -- means the garbage collector will/should run their finalizers.
 -- This is convenient for users who do not need to hold onto a `HermesEnv` for
 -- a long-running single-threaded process. There is a small performance penalty
--- for creating the simdjson instances on each decode.
+-- for creating and destroying the simdjson instances on each decode.
 decode :: ByteString -> (Value -> Decoder a) -> IO a
 decode bs d = do
   hEnv      <- mkHermesEnv_
   paddedStr <- mkSIMDPaddedStrView bs
   flip runReaderT hEnv . runDecoder $
-    withInputPointer paddedStr $ \inputPtr ->
-      withDocument d inputPtr
+    withInputPointer paddedStr $ \inputPtr -> do
+      result <- withDocument d inputPtr
+      finalizeForeignPtr paddedStr
+      finalizeForeignPtr (hDocument hEnv)
+      finalizeForeignPtr (hParser hEnv)
+      pure result
 
 -- | Helper that wraps `decode` and catches any IO exceptions before
 -- converting IO to Either.
@@ -795,6 +819,6 @@ decodeWith env bs d = do
       withDocument d inputPtr
 
 -- | Helper that wraps `decodeWith` and catches any IO exceptions before
--- converting IO to Either.
+-- converting IO to Either. Question: Is this actually safe?
 decodeEitherWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> Either HermesException a
 decodeEitherWith env bs d = Unsafe.unsafePerformIO . try $ decodeWith env bs d
