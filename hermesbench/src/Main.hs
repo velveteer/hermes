@@ -26,29 +26,29 @@ main :: IO ()
 main = defaultMain
   [ withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
-    bgroup "Small Map Decode"
+    bgroup "Small Map"
       [ bench "Hermes Decode" $
           nfIO (flip decode (objectAsKeyValues pure int) =<< input)
       , bench "Hermes DecodeWith" $
           nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (objectAsKeyValues pure int)})
-      , bench "Aeson Decode Lazy" $
+      , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe (Map Text Int)))
-      , bench "Aeson Decode Strict" $
+      , bench "Aeson Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe (Map Text Int)))
-      , bench "Waargonaut Decode Attoparsec" $
+      , bench "Waargonaut Attoparsec" $
           nfIO (void $ WA.decodeAttoparsecByteString (D.objectAsKeyValues D.text D.int) =<< input)
       ]
   , withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
-    bgroup "Full Decode Persons Array"
+    bgroup "Full Persons Array"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
           nfIO (flip decode (list decodePerson) =<< input)
       , bench "Hermes DecodeWith" $
           nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
-      , bench "Aeson Decode Lazy" $
+      , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
-      , bench "Aeson Decode Strict" $
+      , bench "Aeson Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [Person]))
       -- , bench "Waargonaut Decode Attoparsec" $
       --     nfIO (void $ WA.decodeAttoparsecByteString (D.list personDecoder) =<< input)
@@ -58,9 +58,9 @@ main = defaultMain
           nfIO (flip decode (list decodePersonUnordered) =<< input)
       , bench "Hermes DecodeWith" $
           nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
-      , bench "Aeson Decode Lazy" $
+      , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
-      , bench "Aeson Decode Strict" $
+      , bench "Aeson Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe [PersonUnordered]))
       -- , bench "Waargonaut Decode Attoparsec" $
       --     nfIO (void $ WA.decodeAttoparsecByteString (D.list personUnorderedDecoder) =<< input)
@@ -68,16 +68,16 @@ main = defaultMain
     ]
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
     withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
-    bgroup "Partial Decode Twitter"
+    bgroup "Partial Twitter"
     [ bench "Hermes Decode" $
         nfIO (flip decode decodeTwitter =<< input)
     , bench "Hermes DecodeWith" $
         nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
-    , bench "Aeson Decode Lazy" $
+    , bench "Aeson Lazy" $
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
-    , bench "Aeson Decode Strict" $
+    , bench "Aeson Strict" $
         nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe Twitter))
-    , bench "Waargonaut Decode Attoparsec" $
+    , bench "Waargonaut Attoparsec" $
         nfIO (void $ WA.decodeAttoparsecByteString twitterDecoder =<< input)
     ]
   ]

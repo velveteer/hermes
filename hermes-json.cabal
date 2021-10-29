@@ -18,12 +18,14 @@ extra-source-files:
   , cbits/lib.cpp
   , CHANGELOG.md
 tested-with: 
-    GHC == 8.8.4
   , GHC == 8.10.4
   , GHC == 9.0.1
+source-repository head
+  type: git
+  location: git@github.com:velveteer/hermes.git
 
 flag strict
-  description: Turn on strict GHC options
+  description: Enable more GHC warnings plus @-Werror@, which turns warnings into errors.
   default: False
   manual: True
 
