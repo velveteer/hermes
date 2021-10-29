@@ -1,13 +1,26 @@
 cabal-version:      3.0
-name:               hermes
+name:               hermes-json
 version:            0.1.0.0
-synopsis:
-homepage:
+category:           Text, Web, JSON, FFI
+synopsis:           Fast JSON decoding via simdjson C++ bindings
+description:        
+  A JSON parsing library focused on speed that binds to the simdjson C++ library using
+  the Haskell FFI. Hermes offers some helpful functions for building fast JSON decoders
+  for your Haskell types.
+homepage:           https://github.com/velveteer/hermes
 license:            MIT
 license-file:       LICENSE
-author:             Josh Miller
-maintainer:         notjoshmiller@gmail.com
-extra-source-files: cbits, CHANGELOG.md
+author:             Josh Miller <notjoshmiller@gmail.com>
+maintainer:         Josh Miller <notjoshmiller@gmail.com>
+extra-source-files: 
+    cbits/simdjson.h
+  , cbits/simdjson.cpp
+  , cbits/lib.cpp
+  , CHANGELOG.md
+tested-with: 
+    GHC == 8.8.4
+  , GHC == 8.10.4
+  , GHC == 9.0.1
 
 flag strict
   description: Turn on strict GHC options
@@ -30,8 +43,8 @@ library
   build-depends:   
     attoparsec         >= 0.13.1 && < 0.15,
     attoparsec-iso8601 >= 1.0.2.0 && < 1.0.3.0,
-    base               >= 4.14.1 && < 4.15,
-    bytestring         >= 0.10.12 && < 0.11,
+    base               >= 4.13 && < 4.16,
+    bytestring         >= 0.10.10 && < 0.11,
     deepseq            >= 1.4.4 && < 1.5,
     dlist              >= 0.8 && < 1.1,
     scientific         >= 0.3.6 && < 0.4,
@@ -61,22 +74,21 @@ library
       -Wpartial-fields 
       -Wmissed-specialisations 
       -Wunused-packages 
-      -O2
   else
-    ghc-options: -O2 -Wall
+    ghc-options: -Wall
   cxx-sources: 
     cbits/lib.cpp 
     cbits/simdjson.cpp
   if flag(native_comp)
     if flag (debug)
-      cxx-options: -std=c++17 -march=native -O3
+      cxx-options: -std=c++17 -march=native 
     else
-      cxx-options: -std=c++17 -DNDEBUG -march=native -O3
+      cxx-options: -std=c++17 -DNDEBUG -march=native 
   else
     if flag (debug)
-      cxx-options: -std=c++17 -O3
+      cxx-options: -std=c++17 
     else
-      cxx-options: -std=c++17 -DNDEBUG -O3
+      cxx-options: -std=c++17 -DNDEBUG 
   include-dirs: 
     cbits
   install-includes: 
@@ -92,14 +104,14 @@ test-suite hermes-test
   ghc-options: -Wall 
   build-depends:    
     aeson          >= 2.0.1 && < 2.1,
-    base           >= 4.14.3 && < 4.15,
-    bytestring     >= 0.10.12 && < 0.11,
-    containers     >= 0.6.5 && < 0.7,
+    base           >= 4.13 && < 4.16,
+    bytestring     >= 0.10.10 && < 0.11,
+    containers     >= 0.6.2 && < 0.7,
     scientific     >= 0.3.7 && < 0.4,
     text           >= 1.2.4 && < 1.3,
     hedgehog       >= 1.0.5 && < 1.1,
     tasty          >= 1.4.2 && < 1.5,
     tasty-hedgehog >= 1.1.0 && < 1.2,
     time           >= 1.9.3 && < 1.10,
-    hermes
+    hermes-json
 

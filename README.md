@@ -1,6 +1,13 @@
-# Hermes 
+<p align="center">
+<img src="./wings.svg" height=60 width=100 />
+</p>
+<h1 align="center">hermes</h1>
+<p align="center">
+<a href="https://github.com/velveteer/hermes/actions"></a>
+  <img src="https://img.shields.io/github/workflow/status/velveteer/hermes/haskell-ci?style=flat-square" alt="CI badge" />
+</a>
 
-A Haskell interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library for decoding JSON documents. Hermes, messenger of the gods, was the great-grandfather of Jason, son of Aeson.
+A Haskell interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library for decoding JSON documents. Hermes, messenger of the gods, was the maternal great-grandfather of Jason, son of Aeson. 
 
 ## Overview
 
