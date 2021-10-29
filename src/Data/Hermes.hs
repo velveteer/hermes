@@ -271,6 +271,7 @@ handleError errPtr = do
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
     throwSIMD $ T.pack errStr
+{-# INLINE handleError #-}
 
 data SIMDErrorCode =
     SUCCESS
@@ -440,6 +441,7 @@ withUnorderedField f objPtr key = withRunInIO $ \run ->
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
+{-# INLINE withUnorderedField #-}
 
 withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> Text -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
@@ -451,6 +453,7 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
        | otherwise                -> Nothing <$ handleError errPtr
+{-# INLINE withUnorderedOptionalField #-}
 
 withField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
@@ -460,10 +463,12 @@ withField f objPtr key = withRunInIO $ \run ->
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
     handleError errPtr
     f vPtr
+{-# INLINE withField #-}
 
 withPath :: Text -> Decoder a -> Decoder a
 withPath key =
   Decoder . local (\st -> st { hPath = hPath st <> "." <> key }) . runDecoder
+{-# INLINE withPath #-}
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
@@ -471,6 +476,7 @@ getInt valPtr = withRunInIO $ \run ->
     liftIO $ getIntImpl valPtr ptr errPtr
     handleError errPtr
     liftIO $ peek ptr
+{-# INLINE getInt #-}
 
 -- | Helper to work with an Int parsed from a Value.
 withInt :: (Int -> Decoder a) -> Value -> Decoder a
@@ -482,20 +488,18 @@ getDouble valPtr = withRunInIO $ \run ->
     liftIO $ getDoubleImpl valPtr ptr errPtr
     handleError errPtr
     liftIO $ peek ptr
+{-# INLINE getDouble #-}
 
 -- | Helper to work with a Double parsed from a Value.
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
-
--- | Parse a Scientific from a Value.
-scientific :: Value -> Decoder Sci.Scientific
-scientific = withRawByteString parseScientific
 
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> throwHermes $ "failed to parse Scientific: " <> T.pack err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
+{-# INLINE parseScientific #-}
 
 getBool :: Value -> Decoder Bool
 getBool valPtr = withRunInIO $ \run ->
@@ -503,6 +507,7 @@ getBool valPtr = withRunInIO $ \run ->
     liftIO $ getBoolImpl valPtr ptr errPtr
     handleError errPtr
     fmap toBool . liftIO $ peek ptr
+{-# INLINE getBool #-}
 
 -- | Helper to work with a Bool parsed from a Value.
 withBool :: (Bool -> Decoder a) -> Value -> Decoder a
@@ -518,18 +523,22 @@ fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     f (str, len)
+{-# INLINE fromCStringLen #-}
 
 getString :: Value -> Decoder String
 getString = fromCStringLen (liftIO . peekCStringLen)
+{-# INLINE getString #-}
 
 getText :: Value -> Decoder Text
 getText = fromCStringLen parseText
+{-# INLINE getText #-}
 
 parseText :: CStringLen -> Decoder Text
 parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
       run . throwHermes $ T.pack $ show err
+{-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run -> mask_ $
@@ -539,6 +548,7 @@ getRawByteString valPtr = withRunInIO $ \run -> mask_ $
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     liftIO $ BSC.packCStringLen (str, len)
+{-# INLINE getRawByteString #-}
 
 -- | Helper to work with a raw ByteString.Char8 parsed from a Value.
 withRawByteString :: (BSC.ByteString -> Decoder a) -> Value -> Decoder a
@@ -668,12 +678,17 @@ bool = getBool
 double :: Value -> Decoder Double
 double = getDouble
 
+-- | Parse a Scientific from a Value.
+scientific :: Value -> Decoder Sci.Scientific
+scientific = withRawByteString parseScientific
+
 -- | Run an attoparsec text parser as a hermes decoder.
 runAtto :: AT.Parser a -> Text -> Decoder a
 runAtto p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
     Left err -> throwHermes $ "could not parse date: " <> T.pack err
     Right r  -> pure r
+{-# INLINE runAtto #-}
 
 -- | ISO 8601 Compatibility
 
