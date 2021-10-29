@@ -766,7 +766,7 @@ mkHermesEnv_ = mkHermesEnv Nothing
 
 mkSIMDParser :: Maybe Int -> IO (ForeignPtr SIMDParser)
 mkSIMDParser mCap = mask_ $ do
-  let maxCap = 4000000000;
+  let maxCap = 4000000000; -- 4GB
   ptr <- parserInit . toEnum $ fromMaybe maxCap mCap
   newForeignPtr parserDestroy ptr
 
@@ -784,9 +784,10 @@ mkSIMDPaddedStrView input = mask_ $ do
 
 -- | Construct an ephemeral `HermesEnv` and use it to decode the input.
 -- The simdjson instances will be out of scope when decode returns, which
--- means the garbage collector will/should run their finalizers.
+-- means the garbage collector will/should run their finalizers, but we run
+-- them here manually just to be safe.
 -- This is convenient for users who do not need to hold onto a `HermesEnv` for
--- a long-running single-threaded process. There is a small performance penalty
+-- a long-running process. There is a small performance penalty
 -- for creating and destroying the simdjson instances on each decode.
 decode :: ByteString -> (Value -> Decoder a) -> IO a
 decode bs d = do
