@@ -265,7 +265,7 @@ buildHError msg = Decoder $ withRunInIO $ \run -> do
           len <- fmap fromIntegral . liftIO $ peek lenPtr
           debugStr <- liftIO $ T.peekCStringLen (dbStrPtr, len)
           locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
-          pure $ HError pth  msg (T.pack $ Prelude.take 20 locStr) debugStr
+          pure $ HError pth msg (T.pack $ Prelude.take 20 locStr) debugStr
 
 handleError :: Text -> ErrPtr -> Decoder ()
 handleError pre errPtr = do
