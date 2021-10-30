@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -13,6 +15,7 @@ import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import qualified Data.Time as Time
+import           Deriving.Aeson (CustomJSON(..), OmitNothingFields)
 import           GHC.Generics (Generic)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
@@ -29,7 +32,7 @@ tests :: TestTree
 tests = testGroup "Tests" [properties]
 
 properties :: TestTree
-properties = testGroup "Properties" [rtProp]
+properties = testGroup "Properties" [rtProp, rtPropOptional]
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
@@ -37,6 +40,14 @@ rtProp = testProperty "Round Trip With Aeson.ToJSON" $
     p <- forAll genPerson
     encoded <- pure . BSL.toStrict . A.encode $ p
     dp <- evalIO $ decode encoded decodePerson
+    p === dp
+
+rtPropOptional :: TestTree
+rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
+  withTests 1000 . property $ do
+    p <- forAll genPersonOptional
+    encoded <- pure . BSL.toStrict . A.encode $ p
+    dp <- evalIO $ decode encoded decodePersonOptional
     p === dp
 
 data Person =
@@ -57,7 +68,31 @@ data Person =
     , employer      :: Employer
     , mapOfInts     :: Map KeyType Int
     , utcTimeField  :: Time.UTCTime
-    } deriving (Eq, Show, Generic, A.ToJSON)
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (A.ToJSON)
+
+data PersonOptional =
+  PersonOptional
+    { _id           :: Maybe Text
+    , index         :: Maybe Int
+    , guid          :: Maybe Text
+    , isActive      :: Maybe Bool
+    , balance       :: Maybe Text
+    , picture       :: Maybe (Maybe Text)
+    , age           :: Maybe Int
+    , latitude      :: Maybe Double
+    , longitude     :: Maybe Double
+    , tags          :: Maybe [Text]
+    , friends       :: Maybe [Friend]
+    , greeting      :: Maybe (Maybe Text)
+    , favoriteFruit :: Maybe Text
+    , employer      :: Maybe Employer
+    , mapOfInts     :: Maybe (Map KeyType Int)
+    , utcTimeField  :: Maybe Time.UTCTime
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving A.ToJSON via CustomJSON '[OmitNothingFields] PersonOptional
 
 newtype KeyType = KeyType Text
   deriving newtype (Eq, Ord, Show, A.ToJSON, A.ToJSONKey)
@@ -91,8 +126,30 @@ decodePerson = withObject $ \obj ->
     <*> atKey "greeting" (nullable text) obj
     <*> atKey "favoriteFruit" text obj
     <*> atKey "employer" decodeEmployer obj
-    <*> (Map.fromList <$> atKey "mapOfInts" (objectAsKeyValues (pure . KeyType) int) obj)
+    <*> (Map.fromList <$> atKey "mapOfInts"
+          (objectAsKeyValues (pure . KeyType) int) obj)
     <*> atKey "utcTimeField" utcTime obj
+
+decodePersonOptional :: Value -> Decoder PersonOptional
+decodePersonOptional = withObject $ \obj ->
+  PersonOptional
+    <$> atOptionalKey "_id" text obj
+    <*> atOptionalKey "index" int obj
+    <*> atOptionalKey "guid" text obj
+    <*> atOptionalKey "isActive" bool obj
+    <*> atOptionalKey "balance" text obj
+    <*> atOptionalKey "picture" (nullable text) obj
+    <*> atOptionalKey "age" int obj
+    <*> atOptionalKey "latitude" double obj
+    <*> atOptionalKey "longitude" double obj
+    <*> atOptionalKey "tags" (list text) obj
+    <*> atOptionalKey "friends" (list decodeFriend) obj
+    <*> atOptionalKey "greeting" (nullable text) obj
+    <*> atOptionalKey "favoriteFruit" text obj
+    <*> atOptionalKey "employer" decodeEmployer obj
+    <*> (fmap Map.fromList <$> atOptionalKey "mapOfInts"
+          (objectAsKeyValues (pure . KeyType) int) obj)
+    <*> atOptionalKey "utcTimeField" utcTime obj
 
 decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->
@@ -120,6 +177,27 @@ genPerson = Person
       ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
            <*> (Gen.int (Range.linear 0 10000)))
   <*> utcTimeGenerator
+
+genPersonOptional :: Gen PersonOptional
+genPersonOptional = PersonOptional
+  <$> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+  <*> Gen.maybe (Gen.int (Range.linear minBound maxBound))
+  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+  <*> Gen.maybe (Gen.bool)
+  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+  <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
+  <*> Gen.maybe (Gen.int (Range.linear 0 100))
+  <*> Gen.maybe (Gen.double (Range.constant 0 10000000000000000))
+  <*> Gen.maybe (Gen.double (Range.constant 0 10000000000000000))
+  <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
+  <*> Gen.maybe (Gen.list (Range.linear 0 100) genFriend)
+  <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
+  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+  <*> Gen.maybe genEmployer
+  <*> Gen.maybe (Gen.map (Range.linear 0 100)
+      ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
+           <*> (Gen.int (Range.linear 0 10000))))
+  <*> Gen.maybe utcTimeGenerator
 
 genFriend :: Gen Friend
 genFriend = Friend

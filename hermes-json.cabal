@@ -110,6 +110,7 @@ test-suite hermes-test
     base,
     bytestring,
     containers     >= 0.6.2 && < 0.7,
+    deriving-aeson >= 0.2 && < 0.3,
     hermes-json,
     scientific,
     text,
