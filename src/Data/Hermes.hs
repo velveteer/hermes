@@ -229,6 +229,7 @@ data HError =
   HError
     { path        :: !Text
     -- ^ The path to the current element determined by the decoder.
+    -- Formatted in the JSON Pointer standard per RFC 6901.
     , errorMsg    :: !Text
     -- ^ An error message.
     , docLocation :: !Text
@@ -247,10 +248,13 @@ throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
 throwHermes :: Text -> Decoder a
 throwHermes msg = buildHError msg >>= liftIO . throwIO . InternalException
 
+typePrefix :: Text -> Text
+typePrefix typ = "Error while getting value of type " <> typ <> ". "
+
 buildHError :: Text -> Decoder HError
 buildHError msg = Decoder $ withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
-  path' <- run $ asks hPath
+  pth <- run $ asks hPath
   alloca $ \errPtr -> run . runDecoder $
     alloca $ \locStrPtr ->
     alloca $ \lenPtr ->
@@ -261,16 +265,16 @@ buildHError msg = Decoder $ withRunInIO $ \run -> do
           len <- fmap fromIntegral . liftIO $ peek lenPtr
           debugStr <- liftIO $ T.peekCStringLen (dbStrPtr, len)
           locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
-          pure $ HError path' msg (T.pack $ Prelude.take 100 locStr) debugStr
+          pure $ HError pth  msg (T.pack $ Prelude.take 20 locStr) debugStr
 
-handleError :: ErrPtr -> Decoder ()
-handleError errPtr = do
+handleError :: Text -> ErrPtr -> Decoder ()
+handleError pre errPtr = do
   errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
   if errCode == SUCCESS
   then pure ()
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
-    throwSIMD $ T.pack errStr
+    throwSIMD $ pre <> T.pack errStr
 {-# INLINE handleError #-}
 
 data SIMDErrorCode =
@@ -367,9 +371,9 @@ withDocument f inputPtr =
     runDecoder . withParserPointer parserFPtr $ \parserPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
         liftIO $ getIterator parserPtr inputPtr docPtr errPtr
-        handleError errPtr
+        handleError "" errPtr
         liftIO $ getDocumentValueImpl docPtr valPtr errPtr
-        handleError errPtr
+        handleError "" errPtr
         f valPtr
 
 -- | Decode a value at the particular JSON pointer following RFC 6901.
@@ -382,9 +386,9 @@ atPointer jptr f = Decoder $ do
     withRunInIO $ \run ->
       BSC.useAsCString (T.encodeUtf8 jptr) $ \cstr -> run $
         allocaValue $ \vPtr ->
-          alloca $ \errPtr -> withPath ("Pointer: " <> jptr) $ do
+          alloca $ \errPtr -> withPath jptr $ do
           liftIO $ atPointerImpl cstr docPtr vPtr errPtr
-          handleError errPtr
+          handleError "" errPtr
           f vPtr
 
 -- | Helper to work with an Object parsed from a Value.
@@ -393,7 +397,7 @@ withObject f valPtr =
   allocaObject $ \oPtr -> withRunInIO $ \run ->
   alloca $ \errPtr -> run $ do
     liftIO $ getObjectFromValueImpl valPtr oPtr errPtr
-    handleError errPtr
+    handleError (typePrefix "object") errPtr
     f oPtr
 
 -- | Helper to work with an ObjectIter started from an Object.
@@ -402,7 +406,7 @@ withObjectIter f objPtr = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
   allocaObjectIter $ \iterPtr -> do
     liftIO $ getObjectIterImpl objPtr iterPtr errPtr
-    handleError errPtr
+    handleError "" errPtr
     f iterPtr
 
 -- | Execute a function on each Field in an ObjectIter and
@@ -421,11 +425,11 @@ iterateOverFields fk fv iterPtr =
       if not isOver
         then do
             liftIO $ objectIterGetCurrentImpl iterPtr keyPtr lenPtr valPtr errPtr
-            handleError errPtr
+            handleError "" errPtr
             kLen <- fmap fromIntegral . liftIO $ peek lenPtr
             kStr <- liftIO $ peek keyPtr
             keyTxt <- parseText (kStr, kLen)
-            withPath keyTxt $ do
+            withPath (dot keyTxt) $ do
               k <- fk keyTxt
               v <- fv valPtr
               liftIO $ objectIterMoveNextImpl iterPtr
@@ -437,9 +441,9 @@ withUnorderedField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
   BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
-  alloca $ \errPtr -> withPath key $ do
+  alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
-    handleError errPtr
+    handleError "" errPtr
     f vPtr
 {-# INLINE withUnorderedField #-}
 
@@ -447,34 +451,48 @@ withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> Text -> Decoder 
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
   BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
-  alloca $ \errPtr -> withPath key $ do
+  alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
     errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
-       | otherwise                -> Nothing <$ handleError errPtr
+       | otherwise                -> Nothing <$ handleError "" errPtr
 {-# INLINE withUnorderedOptionalField #-}
 
 withField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
   BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
   allocaValue $ \vPtr ->
-    alloca $ \errPtr -> withPath key $ do
+    alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
-    handleError errPtr
+    handleError "" errPtr
     f vPtr
 {-# INLINE withField #-}
 
 withPath :: Text -> Decoder a -> Decoder a
 withPath key =
-  Decoder . local (\st -> st { hPath = hPath st <> "." <> key }) . runDecoder
+  Decoder . local (\st -> st { hPath = hPath st <> key }) . runDecoder
 {-# INLINE withPath #-}
+
+withPathIndex :: Int -> Decoder a -> Decoder a
+withPathIndex idx =
+  Decoder . local
+    (\st -> st {
+      hPath = fromMaybe (hPath st) (T.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
+           <> showInt idx
+    }) . runDecoder
+  where showInt i = dot . T.pack $ show i
+{-# INLINE withPathIndex #-}
+
+dot :: Text -> Text
+dot = T.cons '/'
+{-# INLINE dot #-}
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
     liftIO $ getIntImpl valPtr ptr errPtr
-    handleError errPtr
+    handleError (typePrefix "int") errPtr
     liftIO $ peek ptr
 {-# INLINE getInt #-}
 
@@ -486,7 +504,7 @@ getDouble :: Value -> Decoder Double
 getDouble valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
     liftIO $ getDoubleImpl valPtr ptr errPtr
-    handleError errPtr
+    handleError (typePrefix "double") errPtr
     liftIO $ peek ptr
 {-# INLINE getDouble #-}
 
@@ -497,7 +515,7 @@ withDouble f = getDouble >=> f
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
-  = either (\err -> throwHermes $ "failed to parse Scientific: " <> T.pack err) pure
+  = either (\err -> throwHermes $ "Failed to parse Scientific: " <> T.pack err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
 {-# INLINE parseScientific #-}
 
@@ -505,7 +523,7 @@ getBool :: Value -> Decoder Bool
 getBool valPtr = withRunInIO $ \run ->
   alloca $ \ptr -> run $ alloca $ \errPtr -> do
     liftIO $ getBoolImpl valPtr ptr errPtr
-    handleError errPtr
+    handleError (typePrefix "bool") errPtr
     fmap toBool . liftIO $ peek ptr
 {-# INLINE getBool #-}
 
@@ -513,24 +531,24 @@ getBool valPtr = withRunInIO $ \run ->
 withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
 
-fromCStringLen :: (CStringLen -> Decoder a) -> Value -> Decoder a
-fromCStringLen f valPtr = withRunInIO $ \run -> mask_ $
+fromCStringLen :: Text -> (CStringLen -> Decoder a) -> Value -> Decoder a
+fromCStringLen lbl f valPtr = withRunInIO $ \run -> mask_ $
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $
   alloca $ \errPtr -> do
     liftIO $ getStringImpl valPtr strPtr lenPtr errPtr
-    handleError errPtr
+    handleError (typePrefix lbl) errPtr
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     f (str, len)
 {-# INLINE fromCStringLen #-}
 
 getString :: Value -> Decoder String
-getString = fromCStringLen (liftIO . peekCStringLen)
+getString = fromCStringLen "string" (liftIO . peekCStringLen)
 {-# INLINE getString #-}
 
 getText :: Value -> Decoder Text
-getText = fromCStringLen parseText
+getText = fromCStringLen "text" parseText
 {-# INLINE getText #-}
 
 parseText :: CStringLen -> Decoder Text
@@ -572,7 +590,7 @@ withArray f val = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
   allocaArray $ \arrPtr -> do
     liftIO $ getArrayFromValueImpl val arrPtr errPtr
-    handleError errPtr
+    handleError (typePrefix "array") errPtr
     f arrPtr
 
 -- | Helper to work with an ArrayIter started from an Array.
@@ -581,7 +599,7 @@ withArrayIter f arrPtr = withRunInIO $ \run ->
   alloca $ \errPtr -> run $
   allocaArrayIter $ \iterPtr -> do
     liftIO $ getArrayIterImpl arrPtr iterPtr errPtr
-    handleError errPtr
+    handleError "" errPtr
     f iterPtr
 
 -- | Execute a function on each Value in an ArrayIter and
@@ -591,17 +609,17 @@ iterateOverArray f iterPtr =
   withRunInIO $ \runInIO ->
   alloca $ \errPtr -> runInIO $
   allocaValue $ \valPtr ->
-  go DList.empty valPtr errPtr
+  go (0 :: Int) DList.empty valPtr errPtr
   where
-    go !acc !valPtr !errPtr = do
+    go !n !acc !valPtr !errPtr = do
       isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver
-        then do
+        then withPathIndex n $ do
           liftIO $ arrayIterGetCurrentImpl iterPtr valPtr errPtr
-          handleError errPtr
+          handleError "" errPtr
           result <- f valPtr
           liftIO $ arrayIterMoveNextImpl iterPtr
-          go (acc <> DList.singleton result) valPtr errPtr
+          go (n + 1) (acc <> DList.singleton result) valPtr errPtr
         else
           pure $ DList.toList acc
 
@@ -655,7 +673,7 @@ char = getText >=> justOne
         Just (c, "") ->
           pure c
         _ ->
-          throwHermes "expected a single character"
+          throwHermes "Expected a single character"
 
 -- | Parse a JSON string into a Haskell String.
 -- For best performance you should use `text` instead.

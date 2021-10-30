@@ -27,6 +27,8 @@ With this in mind, `Data.Hermes` parsers can potentially decode Haskell types fa
 
 This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the tests and benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. `simdjson::ondemand` exceptions will be caught and re-thrown with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
 
+### Decoders
+
 ```haskell
 personDecoder :: Value -> Decoder Person
 personDecoder = withObject $ \obj ->
@@ -44,7 +46,15 @@ decodePersons :: ByteString -> Either HermesException [Person]
 decodePersons bs = decodeEither bs $ list personDecoder
 ```
 
-It looks a lot like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
+It looks a little like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
+
+### Exceptions
+
+When decoding fails for a known reason, you will get a `HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call. The exception contains a `HError` record with some useful information, for example:
+```haskell
+*Main> decode "[10,20,\"test\"]" (list int)
+*** Exception: SIMDException (HError {path = "/2", errorMsg = "Error while getting value of type int. The JSON element does not have the requested type.", docLocation = "\"test\"]", docDebug = "json_iterator [ depth : 2, structural : '\"', offset : 7', error : No error ]"})
+```
 
 ## Benchmarks
 We benchmark decoding a very small object into a Map, full decoding of a large-ish (12 MB) JSON array of objects, and then a partial decoding of Twitter status objects to highlight the on-demand benefits. 

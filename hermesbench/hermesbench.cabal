@@ -1,15 +1,14 @@
-cabal-version:      3.0
-name:               hermesbench
-version:            0.1.0.0
-synopsis:
-homepage:
-license:            MIT
-author:             Josh Miller
-maintainer:         notjoshmiller@gmail.com
+cabal-version: 3.0
+name: hermesbench
+version: 0.1.0.0
+license: MIT
+author: Josh Miller
+maintainer: notjoshmiller@gmail.com
 
-extra-source-files:  json/twitter100.json
-                   , json/persons9000.json
-                   , json/small_map.json
+extra-source-files:  
+    json/twitter100.json
+  , json/persons9000.json
+  , json/small_map.json
 
 benchmark bench 
   build-depends:
