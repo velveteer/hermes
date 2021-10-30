@@ -1,4 +1,4 @@
-#include "./simdjson.h"
+#include "./simdjson/simdjson.h"
 #include <iostream>
 using namespace simdjson;
 extern "C" {
