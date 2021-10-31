@@ -433,7 +433,8 @@ iterateOverFields fk fv iterPtr =
               k <- fk keyTxt
               v <- fv valPtr
               liftIO $ objectIterMoveNextImpl iterPtr
-              go (acc <> DList.singleton (k, v)) keyPtr lenPtr valPtr errPtr
+              removePath (dot keyTxt) $
+                go (acc <> DList.singleton (k, v)) keyPtr lenPtr valPtr errPtr
         else
           pure $ DList.toList acc
 
@@ -473,6 +474,14 @@ withPath :: Text -> Decoder a -> Decoder a
 withPath key =
   Decoder . local (\st -> st { hPath = hPath st <> key }) . runDecoder
 {-# INLINE withPath #-}
+
+removePath :: Text -> Decoder a -> Decoder a
+removePath key =
+  Decoder . local
+    (\st -> st {
+      hPath = fromMaybe (hPath st) (T.stripSuffix key $ hPath st)
+    }) . runDecoder
+{-# INLINE removePath #-}
 
 withPathIndex :: Int -> Decoder a -> Decoder a
 withPathIndex idx =
@@ -555,7 +564,7 @@ parseText :: CStringLen -> Decoder Text
 parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
-      run . throwHermes $ T.pack $ show err
+      run . throwHermes . T.pack $ show err
 {-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString

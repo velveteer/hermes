@@ -224,7 +224,6 @@ data PersonUnordered =
     , guid          :: Text
     , name          :: Text
     , greeting      :: Maybe Text
-    , nonexistent   :: Maybe Text
     , company       :: Text
     , picture       :: Maybe Text
     , phone         :: Text
@@ -252,7 +251,6 @@ decodePersonUnordered = withObject $ \obj ->
     <*> atKey "guid" text obj
     <*> atKey "name" text obj
     <*> atKey "greeting" (nullable text) obj
-    <*> atOptionalKey "nonexistent" text obj
     <*> atKey "company" text obj
     <*> atKey "picture" (nullable text) obj
     <*> atKey "phone" text obj
@@ -279,7 +277,6 @@ personUnorderedDecoder =
     <*> D.atKey "guid" D.text
     <*> D.atKey "name" D.text
     <*> D.atKey "greeting" (D.maybeOrNull D.text)
-    <*> D.atKeyOptional "nonexistent" D.text
     <*> D.atKey "company" D.text
     <*> D.atKey "picture" (D.maybeOrNull D.text)
     <*> D.atKey "phone" D.text
