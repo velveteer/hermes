@@ -86,7 +86,7 @@ Because the On Demand API does not validate the entire document upon creating th
 
 > The On Demand approach is less safe than DOM: we only validate the components of the JSON document that are used and it is possible to begin ingesting an invalid document only to find out later that the document is invalid. Are you fine ingesting a large JSON document that starts with well formed JSON but ends with invalid JSON content?
 
-This library currently cannot decode scalar documents, e.g. a single string or number as a JSON document. 
+This library currently cannot decode scalar documents, e.g. a single string, number, boolean, or null as a JSON document. 
 
 ## Portability
 

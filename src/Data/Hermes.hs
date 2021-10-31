@@ -80,7 +80,7 @@ import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Internal as BS
+import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
@@ -541,7 +541,7 @@ withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
 
 fromCStringLen :: Text -> (CStringLen -> Decoder a) -> Value -> Decoder a
-fromCStringLen lbl f valPtr = withRunInIO $ \run -> mask_ $
+fromCStringLen lbl f valPtr = withRunInIO $ \run ->
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $
   alloca $ \errPtr -> do
@@ -568,7 +568,7 @@ parseText cstr =
 {-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
-getRawByteString valPtr = withRunInIO $ \run -> mask_ $
+getRawByteString valPtr = withRunInIO $ \run ->
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $ do
     liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr
@@ -818,10 +818,9 @@ mkSIMDDocument = mask_ $ do
   newForeignPtr deleteDocumentImpl ptr
 
 mkSIMDPaddedStrView :: ByteString -> IO (ForeignPtr PaddedStringView)
-mkSIMDPaddedStrView input = mask_ $ do
-  let (fp, o, len) = BS.toForeignPtr input
-  withForeignPtr fp $ \bsPtr -> do
-    ptr <- makeInputViewImpl (bsPtr `plusPtr` o) (toEnum len)
+mkSIMDPaddedStrView input = mask_ $
+  Unsafe.unsafeUseAsCStringLen input $ \(cstr, len) -> do
+    ptr <- makeInputViewImpl cstr (fromIntegral len)
     newForeignPtr deleteInputViewImpl ptr
 
 -- | Construct an ephemeral `HermesEnv` and use it to decode the input.
