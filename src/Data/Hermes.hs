@@ -22,10 +22,14 @@ module Data.Hermes
   , decodeWith
   , decodeEitherWith
   -- * Object field accessors
+  , Key
+  , mkKey
   , atKey
   , atOptionalKey
   , atOrderedKey
   -- * JSON pointer decoder
+  , Pointer
+  , mkPointer
   , atPointer
     -- * Value decoders
   , bool
@@ -52,7 +56,6 @@ module Data.Hermes
   -- * Error Types
   , HermesException(..)
   , HError(..)
-  , throwHermes
   -- * Value helpers
   , isNull
   , withArray
@@ -84,6 +87,7 @@ import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
 import qualified Data.Scientific as Sci
+import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -95,7 +99,7 @@ import qualified Data.Time.Calendar.Quarter.Compat as Time
 import qualified Data.Time.LocalTime as Local
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
-import           UnliftIO.Exception
+import           UnliftIO.Exception (Exception, catch, finally, mask_, throwIO, try)
 import           UnliftIO.Foreign hiding (allocaArray, withArray)
 
 -- | Phantom type for a pointer to simdjson::ondemand::parser.
@@ -254,7 +258,7 @@ typePrefix typ = "Error while getting value of type " <> typ <> ". "
 buildHError :: Text -> Decoder HError
 buildHError msg = Decoder $ withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
-  pth <- run $ asks hPath
+  pth <- run $ (asks hPath >>= runDecoder . decodeUtfOrThrow)
   alloca $ \errPtr -> run . runDecoder $
     alloca $ \locStrPtr ->
     alloca $ \lenPtr ->
@@ -350,6 +354,20 @@ newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 -- | A reference to an opaque simdjson::ondemand::object_iterator.
 newtype ObjectIter = ObjectIter (Ptr JSONObjectIter)
 
+-- | Public-facing type for object keys. Use OverloadedStrings for convenience.
+newtype Key = Key BSC.ByteString
+  deriving newtype (IsString, Eq, Ord, Show)
+
+mkKey :: BSC.ByteString -> Key
+mkKey = Key
+
+-- | Public-facing type for a JSON pointer. Use OverloadedStrings for convenience.
+newtype Pointer = Pointer BSC.ByteString
+  deriving newtype (IsString, Eq, Ord, Show)
+
+mkPointer :: BSC.ByteString -> Pointer
+mkPointer = Pointer
+
 withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
 withParserPointer parserFPtr f =
   withForeignPtr parserFPtr $ f . Parser
@@ -379,12 +397,12 @@ withDocument f inputPtr =
 -- | Decode a value at the particular JSON pointer following RFC 6901.
 -- Be careful where you use this because it rewinds the document on each
 -- successive call.
-atPointer :: Text -> (Value -> Decoder a) -> Decoder a
-atPointer jptr f = Decoder $ do
+atPointer :: Pointer -> (Value -> Decoder a) -> Decoder a
+atPointer (Pointer jptr) f = Decoder $ do
   docFPtr <- asks hDocument
   runDecoder . withDocumentPointer docFPtr $ \docPtr ->
     withRunInIO $ \run ->
-      BSC.useAsCString (T.encodeUtf8 jptr) $ \cstr -> run $
+      Unsafe.unsafeUseAsCString jptr $ \cstr -> run $
         allocaValue $ \vPtr ->
           alloca $ \errPtr -> withPath jptr $ do
           liftIO $ atPointerImpl cstr docPtr vPtr errPtr
@@ -429,18 +447,18 @@ iterateOverFields fk fv iterPtr =
             kLen <- fmap fromIntegral . liftIO $ peek lenPtr
             kStr <- liftIO $ peek keyPtr
             keyTxt <- parseText (kStr, kLen)
-            withPath (dot keyTxt) $ do
+            withPath (dot $ T.encodeUtf8 keyTxt) $ do
               k <- fk keyTxt
               v <- fv valPtr
               liftIO $ objectIterMoveNextImpl iterPtr
-              removePath (dot keyTxt) $
+              removePath (dot $ T.encodeUtf8 keyTxt) $
                 go (acc <> DList.singleton (k, v)) keyPtr lenPtr valPtr errPtr
         else
           pure $ DList.toList acc
 
-withUnorderedField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
+withUnorderedField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
-  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
+  Unsafe.unsafeUseAsCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
@@ -448,9 +466,9 @@ withUnorderedField f objPtr key = withRunInIO $ \run ->
     f vPtr
 {-# INLINE withUnorderedField #-}
 
-withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> Text -> Decoder (Maybe a)
+withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
-  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
+  Unsafe.unsafeUseAsCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
@@ -460,9 +478,9 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
        | otherwise                -> Nothing <$ handleError "" errPtr
 {-# INLINE withUnorderedOptionalField #-}
 
-withField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
+withField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
-  BSC.useAsCString (T.encodeUtf8 key) $ \cstr -> run $
+  Unsafe.unsafeUseAsCString key $ \cstr -> run $
   allocaValue $ \vPtr ->
     alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldImpl objPtr cstr vPtr errPtr
@@ -470,32 +488,36 @@ withField f objPtr key = withRunInIO $ \run ->
     f vPtr
 {-# INLINE withField #-}
 
-withPath :: Text -> Decoder a -> Decoder a
-withPath key =
-  Decoder . local (\st -> st { hPath = hPath st <> key }) . runDecoder
+withPath :: ByteString -> Decoder a -> Decoder a
+withPath key d =
+  Decoder . local (\st -> st { hPath = hPath st <> key }) $ runDecoder d
 {-# INLINE withPath #-}
 
-removePath :: Text -> Decoder a -> Decoder a
-removePath key =
+removePath :: ByteString -> Decoder a -> Decoder a
+removePath key d =
   Decoder . local
     (\st -> st {
-      hPath = fromMaybe (hPath st) (T.stripSuffix key $ hPath st)
-    }) . runDecoder
+      hPath = fromMaybe (hPath st) (BSC.stripSuffix key $ hPath st)
+    }) $ runDecoder d
 {-# INLINE removePath #-}
 
 withPathIndex :: Int -> Decoder a -> Decoder a
 withPathIndex idx =
   Decoder . local
     (\st -> st {
-      hPath = fromMaybe (hPath st) (T.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
+      hPath = fromMaybe (hPath st) (BSC.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
            <> showInt idx
     }) . runDecoder
-  where showInt i = dot . T.pack $ show i
+  where showInt i = dot . BSC.pack $ show i
 {-# INLINE withPathIndex #-}
 
-dot :: Text -> Text
-dot = T.cons '/'
+dot :: ByteString -> ByteString
+dot = BSC.cons '/'
 {-# INLINE dot #-}
+
+decodeUtfOrThrow :: ByteString -> Decoder Text
+decodeUtfOrThrow = either (fail . show) pure . T.decodeUtf8'
+{-# INLINE decodeUtfOrThrow #-}
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
@@ -524,7 +546,7 @@ withDouble f = getDouble >=> f
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
 parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
 parseScientific
-  = either (\err -> throwHermes $ "Failed to parse Scientific: " <> T.pack err) pure
+  = either (\err -> fail $ "Failed to parse Scientific: " <> err) pure
   . A.parseOnly (A.scientific <* A.endOfInput)
 {-# INLINE parseScientific #-}
 
@@ -564,7 +586,7 @@ parseText :: CStringLen -> Decoder Text
 parseText cstr =
   withRunInIO $ \run ->
     T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
-      run . throwHermes . T.pack $ show err
+      run . fail $ show err
 {-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
@@ -634,18 +656,18 @@ iterateOverArray f iterPtr =
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
-atKey :: Text -> (Value -> Decoder a) -> Object -> Decoder a
-atKey key parser obj = withUnorderedField parser obj key
+atKey :: Key -> (Value -> Decoder a) -> Object -> Decoder a
+atKey (Key key) parser obj = withUnorderedField parser obj key
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
-atOptionalKey :: Text -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
-atOptionalKey key parser obj = withUnorderedOptionalField parser obj key
+atOptionalKey :: Key -> (Value -> Decoder a) -> Object -> Decoder (Maybe a)
+atOptionalKey (Key key) parser obj = withUnorderedOptionalField parser obj key
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
-atOrderedKey :: Text -> (Value -> Decoder a) -> Object -> Decoder a
-atOrderedKey key parser obj = withField parser obj key
+atOrderedKey :: Key -> (Value -> Decoder a) -> Object -> Decoder a
+atOrderedKey (Key key) parser obj = withField parser obj key
 
 -- | Parse a homogenous JSON array into a Haskell list.
 list :: (Value -> Decoder a) -> Value -> Decoder [a]
@@ -682,7 +704,7 @@ char = getText >=> justOne
         Just (c, "") ->
           pure c
         _ ->
-          throwHermes "Expected a single character"
+          fail "Expected a single character"
 
 -- | Parse a JSON string into a Haskell String.
 -- For best performance you should use `text` instead.
@@ -713,7 +735,7 @@ scientific = withRawByteString parseScientific
 runAtto :: AT.Parser a -> Text -> Decoder a
 runAtto p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
-    Left err -> throwHermes $ "could not parse date: " <> T.pack err
+    Left err -> fail $ "could not parse date: " <> err
     Right r  -> pure r
 {-# INLINE runAtto #-}
 
@@ -771,7 +793,7 @@ newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
 
 instance Alternative Decoder where
-  empty = throwHermes "unspecified error"
+  empty = fail "Unspecified error"
   ad <|> bd = ad `catch` (\(_err :: HermesException) -> bd)
 
 instance MonadFail Decoder where
@@ -784,7 +806,7 @@ data HermesEnv =
   HermesEnv
     { hParser   :: !(ForeignPtr SIMDParser)
     , hDocument :: !(ForeignPtr SIMDDocument)
-    , hPath     :: !Text
+    , hPath     :: !ByteString
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to
@@ -836,11 +858,14 @@ decode bs d = do
   paddedStr <- mkSIMDPaddedStrView bs
   flip runReaderT hEnv . runDecoder $
     withInputPointer paddedStr $ \inputPtr -> do
-      result <- withDocument d inputPtr
-      finalizeForeignPtr paddedStr
-      finalizeForeignPtr (hDocument hEnv)
-      finalizeForeignPtr (hParser hEnv)
-      pure result
+      finally (withDocument d inputPtr) (cleanup hEnv paddedStr)
+
+-- | Internal finalizer for simdjson instances.
+cleanup :: HermesEnv -> ForeignPtr PaddedStringView -> Decoder ()
+cleanup hEnv paddedStr = do
+  finalizeForeignPtr paddedStr
+  finalizeForeignPtr (hDocument hEnv)
+  finalizeForeignPtr (hParser hEnv)
 
 -- | Helper that wraps `decode` and catches any IO exceptions before
 -- converting IO to Either.
