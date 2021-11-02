@@ -1,4 +1,3 @@
-#include "iostream"
 #include "./simdjson/simdjson.h"
 using namespace simdjson;
 extern "C" {
@@ -51,10 +50,12 @@ extern "C" {
 
   void at_pointer(
       const char *pointer,
+      size_t len,
       ondemand::document &doc, 
       ondemand::value &out, 
       error_code &error) {
-    doc.at_pointer(pointer).tie(out, error);
+    std::string_view pointerSv { pointer, len };
+    doc.at_pointer(pointerSv).tie(out, error);
   }
 
   void get_object_from_value(

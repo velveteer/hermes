@@ -153,7 +153,7 @@ foreign import ccall unsafe "get_document_value" getDocumentValueImpl
   :: Document -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "at_pointer" atPointerImpl
-  :: CString -> Document -> Value -> ErrPtr -> IO ()
+  :: CString -> Int -> Document -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
   :: Value -> Object -> ErrPtr -> IO ()
@@ -403,10 +403,10 @@ atPointer (Pointer jptr) f = Decoder $ do
   docFPtr <- asks hDocument
   runDecoder . withDocumentPointer docFPtr $ \docPtr ->
     withRunInIO $ \run ->
-      Unsafe.unsafeUseAsCString jptr $ \cstr -> run $
+      Unsafe.unsafeUseAsCStringLen jptr $ \(cstr, len) -> run $
         allocaValue $ \vPtr ->
           alloca $ \errPtr -> withPath jptr $ do
-          liftIO $ atPointerImpl cstr docPtr vPtr errPtr
+          liftIO $ atPointerImpl cstr len docPtr vPtr errPtr
           handleError "" errPtr
           f vPtr
 
