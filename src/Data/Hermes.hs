@@ -25,6 +25,7 @@ module Data.Hermes
   -- * Object field accessors
   , Key
   , mkKey
+  , keyFromText
   , atKey
   , atOptionalKey
   , atOrderedKey
@@ -361,6 +362,9 @@ newtype Key = Key BSC.ByteString
 
 mkKey :: BSC.ByteString -> Key
 mkKey = Key
+
+keyFromText :: T.Text -> Key
+keyFromText = Key . T.encodeUtf8
 
 -- | Public-facing type for a JSON pointer. Use OverloadedStrings for convenience.
 newtype Pointer = Pointer BSC.ByteString
