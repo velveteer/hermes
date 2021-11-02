@@ -1,3 +1,4 @@
+#include "iostream"
 #include "./simdjson/simdjson.h"
 using namespace simdjson;
 extern "C" {
@@ -125,17 +126,21 @@ extern "C" {
   void find_field(
       ondemand::object &obj, 
       const char *key, 
+      size_t len,
       ondemand::value &out, 
       error_code &error) {
-    obj.find_field(key).tie(out, error);
+    std::string_view keySv { key, len };
+    obj.find_field(keySv).tie(out, error);
   }
 
   void find_field_unordered(
       ondemand::object &obj, 
       const char *key, 
+      size_t len,
       ondemand::value &out, 
       error_code &error) {
-    obj.find_field_unordered(key).tie(out, error);
+    std::string_view keySv { key, len };
+    obj.find_field_unordered(keySv).tie(out, error);
   }
 
   void get_int(ondemand::value &val, int64_t &out, error_code &error) {

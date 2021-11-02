@@ -186,10 +186,10 @@ foreign import ccall unsafe "arr_iter_move_next" arrayIterMoveNextImpl
   :: ArrayIter -> IO ()
 
 foreign import ccall unsafe "find_field_unordered" findFieldUnorderedImpl
-  :: Object -> CString -> Value -> ErrPtr -> IO ()
+  :: Object -> CString -> Int -> Value -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "find_field" findFieldImpl
-  :: Object -> CString -> Value -> ErrPtr -> IO ()
+  :: Object -> CString -> Int -> Value -> ErrPtr -> IO ()
 
 -- Helpers
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
@@ -459,20 +459,20 @@ iterateOverFields fk fv iterPtr =
 
 withUnorderedField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCString key $ \cstr -> run $
+  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
-    liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr errPtr
     handleError "" errPtr
     f vPtr
 {-# INLINE withUnorderedField #-}
 
 withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCString key $ \cstr -> run $
+  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
-    liftIO $ findFieldUnorderedImpl objPtr cstr vPtr errPtr
+    liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr errPtr
     errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
     if | errCode == SUCCESS       -> Just <$> f vPtr
        | errCode == NO_SUCH_FIELD -> pure Nothing
@@ -481,10 +481,10 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
 
 withField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCString key $ \cstr -> run $
+  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
     alloca $ \errPtr -> withPath (dot key) $ do
-    liftIO $ findFieldImpl objPtr cstr vPtr errPtr
+    liftIO $ findFieldImpl objPtr cstr len vPtr errPtr
     handleError "" errPtr
     f vPtr
 {-# INLINE withField #-}
@@ -585,9 +585,9 @@ getText = fromCStringLen "text" parseText
 
 parseText :: CStringLen -> Decoder Text
 parseText cstr =
-  withRunInIO $ \run ->
-    T.peekCStringLen cstr `catch` \(err :: T.UnicodeException) ->
-      run . fail $ show err
+  withRunInIO $ \_ ->
+    T.peekCStringLen cstr
+      `catch` \(err :: T.UnicodeException) -> fail $ show err
 {-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
