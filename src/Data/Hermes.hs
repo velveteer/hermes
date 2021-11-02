@@ -15,12 +15,13 @@ of the simdjson::ondemand API.
 
 module Data.Hermes
   ( -- * Decoding from ByteString input
-    Decoder
+    Decoder(runDecoder)
   , HermesEnv
   , decode
   , decodeEither
-  , decodeWith
-  , decodeEitherWith
+  , withHermesEnv
+  , withInputBuffer
+  , withDocument
   -- * Object field accessors
   , Key
   , mkKey
@@ -99,7 +100,7 @@ import qualified Data.Time.Calendar.Quarter.Compat as Time
 import qualified Data.Time.LocalTime as Local
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
-import           UnliftIO.Exception (Exception, catch, finally, mask_, throwIO, try)
+import           UnliftIO.Exception (Exception, bracket, catch, mask_, throwIO, try)
 import           UnliftIO.Foreign hiding (allocaArray, withArray)
 
 -- | Phantom type for a pointer to simdjson::ondemand::parser.
@@ -375,10 +376,6 @@ withParserPointer parserFPtr f =
 withDocumentPointer :: ForeignPtr SIMDDocument -> (Document -> Decoder a) -> Decoder a
 withDocumentPointer docFPtr f =
   withForeignPtr docFPtr $ f . Document
-
-withInputPointer :: ForeignPtr PaddedStringView -> (InputBuffer -> Decoder a) -> Decoder a
-withInputPointer pStrFPtr f =
-  withForeignPtr pStrFPtr $ f . InputBuffer
 
 withDocument :: (Value -> Decoder a) -> InputBuffer -> Decoder a
 withDocument f inputPtr =
@@ -845,47 +842,40 @@ mkSIMDPaddedStrView input = mask_ $
     ptr <- makeInputViewImpl cstr (fromIntegral len)
     newForeignPtr deleteInputViewImpl ptr
 
--- | Construct an ephemeral `HermesEnv` and use it to decode the input.
--- The simdjson instances will be out of scope when decode returns, which
--- means the garbage collector will/should run their finalizers, but we run
--- them here manually just to be safe.
--- This is convenient for users who do not need to hold onto a `HermesEnv` for
--- a long-running process. There is a small performance penalty
--- for creating and destroying the simdjson instances on each decode.
-decode :: ByteString -> (Value -> Decoder a) -> IO a
-decode bs d = do
-  hEnv      <- mkHermesEnv_
-  paddedStr <- mkSIMDPaddedStrView bs
-  flip runReaderT hEnv . runDecoder $
-    withInputPointer paddedStr $ \inputPtr -> do
-      finally (withDocument d inputPtr) (cleanup hEnv paddedStr)
+-- | Construct a simdjson:padded_string_view from a Haskell `ByteString`, and pass
+-- it to a monadic action. The instance is destroyed via the `bracket` pattern.
+withInputBuffer :: MonadUnliftIO m => ByteString -> (InputBuffer -> m a) -> m a
+withInputBuffer bs f =
+  bracket acquire release $ \fPtr -> withForeignPtr fPtr $ f . InputBuffer
+  where
+    acquire = liftIO $ mkSIMDPaddedStrView bs
+    release = liftIO . finalizeForeignPtr
 
 -- | Internal finalizer for simdjson instances.
-cleanup :: HermesEnv -> ForeignPtr PaddedStringView -> Decoder ()
-cleanup hEnv paddedStr = do
-  finalizeForeignPtr paddedStr
+cleanupHermesEnv :: HermesEnv -> IO ()
+cleanupHermesEnv hEnv = do
   finalizeForeignPtr (hDocument hEnv)
   finalizeForeignPtr (hParser hEnv)
 
--- | Helper that wraps `decode` and catches any IO exceptions before
--- converting IO to Either.
-decodeEither :: ByteString -> (Value -> Decoder a) -> Either HermesException a
-decodeEither bs d = Unsafe.unsafePerformIO . try $ decode bs d
+-- | Run an action that is passed a `HermesEnv`.
+-- The simdjson instances are created and destroyed using the `bracket` pattern.
+withHermesEnv :: MonadUnliftIO m => (HermesEnv -> m a) -> m a
+withHermesEnv = bracket acquire release
+  where
+    acquire = liftIO mkHermesEnv_
+    release = liftIO . cleanupHermesEnv
 
--- | Decode with a caller-provided `HermesEnv`. If the caller retains a reference to
--- the `HermesEnv` then the simdjson instance finalizers will not be run.
--- This is useful for long-running applications that want to re-use simdjson instances
--- for optimal performance.
--- Do NOT share a `HermesEnv` across multiple threads, but it is fine for each thread
--- to have its own.
-decodeWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> IO a
-decodeWith env bs d = do
-  paddedStr <- mkSIMDPaddedStrView bs
-  flip runReaderT env . runDecoder $
-    withInputPointer paddedStr $ \inputPtr ->
-      withDocument d inputPtr
+-- | Construct a `HermesEnv` and use it to run a `Decoder` in IO.
+-- This calls `withDocument` which gives us the initial `Value`, so this
+-- cannot currently decode scalar documents due to simdjson constraints.
+-- There is a small performance penalty for creating and destroying the simdjson
+-- instances on each decode, so this is not recommended for running in tight loops.
+decode :: (Value -> Decoder a) -> ByteString -> IO a
+decode d bs =
+  withHermesEnv $ \hEnv ->
+    withInputBuffer bs $ \input ->
+      flip runReaderT hEnv . runDecoder $ withDocument d input
 
--- | Helper that wraps `decodeWith` and catches any IO exceptions before
--- converting IO to Either. Question: Is this actually safe?
-decodeEitherWith :: HermesEnv -> ByteString -> (Value -> Decoder a) -> Either HermesException a
-decodeEitherWith env bs d = Unsafe.unsafePerformIO . try $ decodeWith env bs d
+-- | Helper that wraps `decode` and catches any IO exceptions before converting IO to Either.
+decodeEither :: (Value -> Decoder a) -> ByteString -> Either HermesException a
+decodeEither d = Unsafe.unsafePerformIO . try . decode d

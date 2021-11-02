@@ -25,12 +25,11 @@ import           Data.Hermes
 main :: IO ()
 main = defaultMain
   [ withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
-    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Small Map"
       [ bench "Hermes Decode" $
-          nfIO (flip decode (objectAsKeyValues pure int) =<< input)
-      , bench "Hermes DecodeWith" $
-          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (objectAsKeyValues pure int)})
+          nfIO (decode (objectAsKeyValues pure int) =<< input)
+      -- , bench "Hermes DecodeWith" $
+      --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (objectAsKeyValues pure int)})
       , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe (Map Text Int)))
       , bench "Aeson Strict" $
@@ -39,13 +38,12 @@ main = defaultMain
           nfIO (void $ WA.decodeAttoparsecByteString (D.objectAsKeyValues D.text D.int) =<< input)
       ]
   , withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
-    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Full Persons Array"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (flip decode (list decodePerson) =<< input)
-      , bench "Hermes DecodeWith" $
-          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
+          nfIO (decode (list decodePerson) =<< input)
+      -- , bench "Hermes DecodeWith" $
+      --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
       , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [Person]))
       , bench "Aeson Strict" $
@@ -55,9 +53,9 @@ main = defaultMain
       ]
     , bgroup "Unordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (flip decode (list decodePersonUnordered) =<< input)
-      , bench "Hermes DecodeWith" $
-          nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
+          nfIO (decode (list decodePersonUnordered) =<< input)
+      -- , bench "Hermes DecodeWith" $
+      --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
       , bench "Aeson Lazy" $
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe [PersonUnordered]))
       , bench "Aeson Strict" $
@@ -67,12 +65,11 @@ main = defaultMain
       ]
     ]
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
-    withResource mkHermesEnv_ (const $ pure ()) $ \envIO ->
     bgroup "Partial Twitter"
     [ bench "Hermes Decode" $
-        nfIO (flip decode decodeTwitter =<< input)
-    , bench "Hermes DecodeWith" $
-        nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
+        nfIO (decode decodeTwitter =<< input)
+    -- , bench "Hermes DecodeWith" $
+    --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
     , bench "Aeson Lazy" $
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Strict" $
@@ -106,7 +103,9 @@ data Person =
     , friends       :: [Friend]
     , greeting      :: Maybe Text
     , favoriteFruit :: Text
-    } deriving (Show, Generic, NFData)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass NFData
 
 decodePerson :: Value -> Decoder Person
 decodePerson = withObject $ \obj ->
@@ -176,7 +175,9 @@ data Friend =
   Friend
     { id   :: Int
     , name :: Text
-    } deriving (Show, Generic, NFData)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass NFData
 
 instance Aeson.FromJSON Person where
   parseJSON = Aeson.withObject "Person" $ \obj ->
@@ -234,7 +235,9 @@ data PersonUnordered =
     , registered    :: Text
     , tags          :: [Text]
     , friends       :: [Friend]
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass (NFData, Aeson.FromJSON)
 
 decodePersonUnordered :: Value -> Decoder PersonUnordered
 decodePersonUnordered = withObject $ \obj ->
@@ -291,7 +294,9 @@ personUnorderedDecoder =
 data Twitter =
   Twitter
     { statuses :: [Status]
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass (NFData, Aeson.FromJSON)
 
 data Status =
   Status
@@ -301,7 +306,9 @@ data Status =
     -- this tests iterating over the same object twice
     , result_type       :: Text
     , iso_language_code :: Text
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass (NFData, Aeson.FromJSON)
 
 data User =
   User
@@ -309,7 +316,9 @@ data User =
     , location    :: Text
     , description :: Text
     , url         :: Maybe Text
-    } deriving (Show, Generic, NFData, Aeson.FromJSON)
+    }
+    deriving stock (Show, Generic)
+    deriving anyclass (NFData, Aeson.FromJSON)
 
 decodeTwitter :: Value -> Decoder Twitter
 decodeTwitter = withObject $ \obj ->

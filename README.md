@@ -43,7 +43,7 @@ personDecoder = withObject $ \obj ->
 
 -- Decode a strict ByteString.
 decodePersons :: ByteString -> Either HermesException [Person]
-decodePersons bs = decodeEither bs $ list personDecoder
+decodePersons = decodeEither $ list personDecoder
 ```
 
 It looks a little like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
@@ -52,7 +52,7 @@ It looks a little like `Waargonaut.Decode.Decoder m`, just not as polymorphic. T
 
 When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call. The exception contains a `HError` record with some useful information, for example:
 ```haskell
-*Main> decodeEither "{ \"hello\": [\"world\", false] }" (withObject $ atKey "hello" (list text))
+*Main> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }" 
 Left (SIMDException (HError {path = "/hello/1", errorMsg = "Error while getting value of type text. The JSON element does not have the requested type.", docLocation = "false] }", docDebug = "json_iterator [ depth : 3, structural : 'f', offset : 21', error : No error ]"}))
 ```
 
@@ -74,7 +74,7 @@ We benchmark decoding a very small object into a Map, full decoding of a large-i
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * If you know the key ordering of the JSON then you can use `atOrderedKey` instead of `atKey`. This is faster but it cannot handle missing keys.
-* You can improve performance by holding onto your own `HermesEnv` and using `decodeEitherWith` instead of `decodeEither`. This ensures the simdjson instances are allocated by the caller who can hold a reference to them, allowing re-use and preventing the garbage collector from running their finalizers. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
+* You can improve performance by holding onto your own `HermesEnv`. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
 
 ## Limitations
 

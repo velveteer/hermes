@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -39,7 +38,7 @@ rtProp = testProperty "Round Trip With Aeson.ToJSON" $
   withTests 1000 . property $ do
     p <- forAll genPerson
     encoded <- pure . BSL.toStrict . A.encode $ p
-    dp <- evalIO $ decode encoded decodePerson
+    dp <- evalIO $ decode decodePerson encoded
     p === dp
 
 rtPropOptional :: TestTree
@@ -47,7 +46,7 @@ rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
   withTests 1000 . property $ do
     p <- forAll genPersonOptional
     encoded <- pure . BSL.toStrict . A.encode $ p
-    dp <- evalIO $ decode encoded decodePersonOptional
+    dp <- evalIO $ decode decodePersonOptional encoded
     p === dp
 
 data Person =
@@ -101,13 +100,17 @@ data Friend =
   Friend
     { id   :: Int
     , name :: Text
-    } deriving (Eq, Show, A.ToJSON, Generic)
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass A.ToJSON
 
 data Employer =
   Employer
     { inefficient :: String
     , exp :: Scientific
-    } deriving (Eq, Show, A.ToJSON, Generic)
+    }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass A.ToJSON
 
 decodePerson :: Value -> Decoder Person
 decodePerson = withObject $ \obj ->
@@ -174,8 +177,8 @@ genPerson = Person
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> genEmployer
   <*> Gen.map (Range.linear 0 100)
-      ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
-           <*> (Gen.int (Range.linear 0 10000)))
+      ((,) <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
+           <*> Gen.int (Range.linear 0 10000))
   <*> utcTimeGenerator
 
 genPersonOptional :: Gen PersonOptional
@@ -183,7 +186,7 @@ genPersonOptional = PersonOptional
   <$> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe (Gen.int (Range.linear minBound maxBound))
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.maybe (Gen.bool)
+  <*> Gen.maybe Gen.bool
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.maybe (Gen.int (Range.linear 0 100))
@@ -195,8 +198,8 @@ genPersonOptional = PersonOptional
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe genEmployer
   <*> Gen.maybe (Gen.map (Range.linear 0 100)
-      ((,) <$> (fmap KeyType $ Gen.text (Range.linear 0 100) Gen.unicode)
-           <*> (Gen.int (Range.linear 0 10000))))
+      ((,) <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
+           <*> Gen.int (Range.linear 0 10000)))
   <*> Gen.maybe utcTimeGenerator
 
 genFriend :: Gen Friend
@@ -230,14 +233,6 @@ dayGenerator =
 
 timeOfDayGenerator :: Gen Time.DiffTime
 timeOfDayGenerator =
-  -- Although the UTCTime docs allow for leap seconds to be represented and
-  -- Aeson is happy to *serialize* values with leap seconds, we will fail to
-  -- parse values with leap seconds. If we ever need to support decoding times
-  -- with leap seconds, we will need to do some work.
-  --
-  -- This issue discusses the UTCTime serialization/deserialization asymmetry:
-  --
-  --   https://github.com/bos/aeson/issues/500
   fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000)
     $ Gen.realFrac_ (Range.constant 0 86400)
 
