@@ -108,8 +108,8 @@ import           UnliftIO.Foreign hiding (allocaArray, withArray)
 data SIMDParser
 -- | Phantom type for a pointer to simdjson::ondemand::document.
 data SIMDDocument
--- | Phantom type for a pointer to simdjson::padded_string_view.
-data PaddedStringView
+-- | Phantom type for a pointer to simdjson::padded_string.
+data PaddedString
 
 -- | Alias for a pointer to the simdjson::error_code that most functions use
 -- to report errors back to us.
@@ -139,11 +139,11 @@ foreign import ccall unsafe "make_document" makeDocumentImpl
 foreign import ccall unsafe "&delete_document" deleteDocumentImpl
   :: FunPtr (Ptr SIMDDocument -> IO ())
 
-foreign import ccall unsafe "make_input_view" makeInputViewImpl
-  :: CString -> CSize -> IO (Ptr PaddedStringView)
+foreign import ccall unsafe "make_input" makeInputImpl
+  :: CString -> CSize -> IO (Ptr PaddedString)
 
-foreign import ccall unsafe "&delete_input_view" deleteInputViewImpl
-  :: FunPtr (Ptr PaddedStringView -> IO ())
+foreign import ccall unsafe "&delete_input" deleteInputImpl
+  :: FunPtr (Ptr PaddedString -> IO ())
 
 -- Document parsers
 foreign import ccall unsafe "get_iterator" getIterator
@@ -196,7 +196,7 @@ foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: ErrPtr -> IO CString
 
 foreign import ccall unsafe "current_location" currentLocationImpl
-  :: Document -> Ptr CString -> ErrPtr -> IO CString
+  :: Document -> Ptr CString -> ErrPtr -> IO ()
 
 foreign import ccall unsafe "to_debug_string" toDebugStringImpl
   :: Document -> CString -> Ptr CSize -> IO ()
@@ -247,31 +247,41 @@ data HError =
     deriving anyclass (NFData)
 
 -- | Re-throw an exception caught from the simdjson library.
-throwSIMD :: Text -> Decoder a
-throwSIMD msg = buildHError msg >>= liftIO . throwIO . SIMDException
+throwSIMD :: SIMDErrorCode -> Text -> Decoder a
+throwSIMD errCode msg = buildHError (Just errCode) msg >>= liftIO . throwIO . SIMDException
 
 -- | Throw an IO exception in the `Decoder` context.
 throwHermes :: Text -> Decoder a
-throwHermes msg = buildHError msg >>= liftIO . throwIO . InternalException
+throwHermes msg = buildHError Nothing msg >>= liftIO . throwIO . InternalException
 
 typePrefix :: Text -> Text
 typePrefix typ = "Error while getting value of type " <> typ <> ". "
 
-buildHError :: Text -> Decoder HError
-buildHError msg = Decoder $ withRunInIO $ \run -> do
+buildHError :: Maybe SIMDErrorCode -> Text -> Decoder HError
+buildHError mErrCode msg = Decoder $ withRunInIO $ \run -> do
   docFPtr <- run $ asks hDocument
-  pth <- run $ (asks hPath >>= runDecoder . decodeUtfOrThrow)
-  alloca $ \errPtr -> run . runDecoder $
-    alloca $ \locStrPtr ->
-    alloca $ \lenPtr ->
-      withDocumentPointer docFPtr $ \docPtr -> do
-        strFPtr <- mallocForeignPtrBytes 128
-        withForeignPtr strFPtr $ \dbStrPtr -> do
-          liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
-          len <- fmap fromIntegral . liftIO $ peek lenPtr
-          debugStr <- liftIO $ T.peekCStringLen (dbStrPtr, len)
-          locStr <- peekCString =<< liftIO (currentLocationImpl docPtr locStrPtr errPtr)
-          pure $ HError pth msg (T.pack $ Prelude.take 20 locStr) debugStr
+  pth <- run (asks hPath >>= runDecoder . decodeUtfOrThrow)
+  case mErrCode of
+    c | c == Just EMPTY -> pure $ HError pth msg "" ""
+      | c == Just INSUFFICIENT_PADDING -> pure $ HError pth msg "" ""
+      | c == Just UTF8_ERROR -> pure $ HError pth msg "" ""
+      | c == Just UNESCAPED_CHARS -> pure $ HError pth msg "" ""
+      | c == Just UNCLOSED_STRING -> pure $ HError pth msg "" ""
+    _ -> alloca $ \errPtr -> run . runDecoder $
+      alloca $ \locStrPtr ->
+        alloca $ \lenPtr ->
+        withDocumentPointer docFPtr $ \docPtr -> do
+          liftIO $ currentLocationImpl docPtr locStrPtr errPtr
+          errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
+          if errCode == OUT_OF_BOUNDS
+            then pure $ HError pth msg "out of bounds" ""
+            else
+              allocaBytes 128 $ \dbStrPtr -> do
+                locStr <- liftIO $ peekCString =<< peek locStrPtr
+                liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
+                len <- fmap fromIntegral . liftIO $ peek lenPtr
+                debugStr <- peekCStringLen (dbStrPtr, len)
+                pure $ HError pth msg (T.pack $ Prelude.take 20 locStr) (T.pack debugStr)
 
 handleError :: Text -> ErrPtr -> Decoder ()
 handleError pre errPtr = do
@@ -280,7 +290,7 @@ handleError pre errPtr = do
   then pure ()
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errPtr)
-    throwSIMD $ pre <> T.pack errStr
+    throwSIMD errCode $ pre <> T.pack errStr
 {-# INLINE handleError #-}
 
 data SIMDErrorCode =
@@ -338,8 +348,8 @@ newtype Parser = Parser (Ptr SIMDParser)
 -- | A reference to an opaque simdjson::ondemand::document.
 newtype Document = Document (Ptr SIMDDocument)
 
--- | A reference to an opaque simdjson::padded_string_view.
-newtype InputBuffer = InputBuffer (Ptr PaddedStringView)
+-- | A reference to an opaque simdjson::padded_string.
+newtype InputBuffer = InputBuffer (Ptr PaddedString)
 
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
@@ -840,19 +850,19 @@ mkSIMDDocument = mask_ $ do
   ptr <- makeDocumentImpl
   newForeignPtr deleteDocumentImpl ptr
 
-mkSIMDPaddedStrView :: ByteString -> IO (ForeignPtr PaddedStringView)
-mkSIMDPaddedStrView input = mask_ $
+mkSIMDPaddedStr :: ByteString -> IO (ForeignPtr PaddedString)
+mkSIMDPaddedStr input = mask_ $
   Unsafe.unsafeUseAsCStringLen input $ \(cstr, len) -> do
-    ptr <- makeInputViewImpl cstr (fromIntegral len)
-    newForeignPtr deleteInputViewImpl ptr
+    ptr <- makeInputImpl cstr (fromIntegral len)
+    newForeignPtr deleteInputImpl ptr
 
--- | Construct a simdjson:padded_string_view from a Haskell `ByteString`, and pass
--- it to a monadic action. The instance is destroyed via the `bracket` pattern.
+-- | Construct a simdjson:padded_string from a Haskell `ByteString`, and pass
+-- it to a monadic action. The instance lifetime is managed by the `bracket` function.
 withInputBuffer :: MonadUnliftIO m => ByteString -> (InputBuffer -> m a) -> m a
 withInputBuffer bs f =
   bracket acquire release $ \fPtr -> withForeignPtr fPtr $ f . InputBuffer
   where
-    acquire = liftIO $ mkSIMDPaddedStrView bs
+    acquire = liftIO $ mkSIMDPaddedStr bs
     release = liftIO . finalizeForeignPtr
 
 -- | Internal finalizer for simdjson instances.
@@ -862,7 +872,7 @@ cleanupHermesEnv hEnv = do
   finalizeForeignPtr (hParser hEnv)
 
 -- | Run an action that is passed a `HermesEnv`.
--- The simdjson instances are created and destroyed using the `bracket` pattern.
+-- The simdjson instances are created and destroyed using the `bracket` function.
 withHermesEnv :: MonadUnliftIO m => (HermesEnv -> m a) -> m a
 withHermesEnv = bracket acquire release
   where

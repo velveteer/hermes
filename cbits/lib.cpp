@@ -3,7 +3,7 @@ using namespace simdjson;
 extern "C" {
 
   ondemand::parser *parser_init(size_t max_cap) {
-    return new ondemand::parser(max_cap);
+    return new ondemand::parser{max_cap};
   }
 
   void parser_destroy(ondemand::parser *parser) {
@@ -11,24 +11,24 @@ extern "C" {
   }
 
   ondemand::document *make_document() {
-    return new ondemand::document();
+    return new ondemand::document{};
   }
 
   void delete_document(ondemand::document *doc) {
     delete doc;
   }
 
-  padded_string_view *make_input_view(const char *bytes, size_t len) {
-    return new padded_string_view(bytes, len, len+SIMDJSON_PADDING);
+  padded_string *make_input(const char *bytes, size_t len) {
+    return new padded_string{bytes, len};
   }
 
-  void delete_input_view(padded_string_view *str) {
+  void delete_input(padded_string *str) {
     delete str;
   }
 
   void get_iterator(
       ondemand::parser &parser, 
-      padded_string_view &input, 
+      padded_string &input, 
       ondemand::document &out, 
       error_code &error) {
     parser.iterate(input).tie(out, error);
@@ -192,17 +192,16 @@ extern "C" {
     return val.is_null();
   }
 
-  const char *current_location(
+  void current_location(
       ondemand::document &doc, 
-      const char **loc, 
+      const char **out, 
       error_code &error) {
-    doc.current_location().tie(*loc, error);
-    return *loc;
+    doc.current_location().tie(*out, error);
   }
 
   void to_debug_string(ondemand::document &doc, char *out, size_t &len) {
     std::string str = doc.to_debug_string();
-    strcpy(out, str.data());
+    strcpy(out, str.c_str());
     len = str.length();
   }
 

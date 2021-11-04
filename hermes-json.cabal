@@ -41,6 +41,8 @@ flag debug
   manual: True
 
 library
+  default-extensions:
+    OverloadedStrings
   exposed-modules: 
     Data.Hermes
   build-depends:   
