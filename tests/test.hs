@@ -31,7 +31,7 @@ tests :: TestTree
 tests = testGroup "Tests" [properties]
 
 properties :: TestTree
-properties = testGroup "Properties" [rtProp, rtPropOptional]
+properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors]
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
@@ -48,6 +48,25 @@ rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
     encoded <- pure . BSL.toStrict . A.encode $ p
     dp <- evalIO $ decode decodePersonOptional encoded
     p === dp
+
+rtErrors :: TestTree
+rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
+  withTests 1000 . property $ do
+    p <- forAll
+       $ Gen.element
+       [ "{"
+       , "}"
+       , "{\"}"
+       , "true"
+       , "{\"key\": }"
+       , "["
+       , "]"
+       , "\x00"
+       , "{\"_id\": false }"
+       ]
+    let d1 = decodeEither decodePerson p
+        d2 = decodeEither decodePerson p
+    d1 === d2
 
 data Person =
   Person
