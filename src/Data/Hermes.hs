@@ -265,7 +265,14 @@ buildHError mErrCode msg = do
   pth <- asks hPath >>= decodeUtfOrThrow
   case mErrCode of
     Just c
-      | c `elem` [EMPTY, INSUFFICIENT_PADDING, UTF8_ERROR, UNCLOSED_STRING, UNESCAPED_CHARS]
+      | c `elem`
+      [ EMPTY
+      , INSUFFICIENT_PADDING
+      , SCALAR_DOCUMENT_AS_VALUE
+      , UTF8_ERROR
+      , UNCLOSED_STRING
+      , UNESCAPED_CHARS
+      ]
       -> pure $ HError pth msg "" ""
     _
       ->
