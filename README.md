@@ -93,3 +93,5 @@ This library currently cannot decode scalar documents, e.g. a single string, num
 Per the `simdjson` documentation:
 
 > A recent compiler (LLVM clang6 or better, GNU GCC 7.4 or better, Xcode 11 or better) on a 64-bit (PPC, ARM or x64 Intel/AMD) POSIX systems such as macOS, freeBSD or Linux. We require that the compiler supports the C++11 standard or better.
+
+However, this library relies on `std::string_view` without a shim, so C++17 or better is highly recommended.

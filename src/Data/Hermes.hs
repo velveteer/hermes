@@ -33,6 +33,7 @@ module Data.Hermes
   , Pointer
   , mkPointer
   , atPointer
+  , pointerFromText
     -- * Value decoders
   , bool
   , char
@@ -78,8 +79,9 @@ import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData)
 import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader (MonadReader, asks, local)
 import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
-import           Control.Monad.Trans.Reader (ReaderT(..), asks, local, runReaderT)
+import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
 import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
 import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
@@ -258,30 +260,30 @@ typePrefix :: Text -> Text
 typePrefix typ = "Error while getting value of type " <> typ <> ". "
 
 buildHError :: Maybe SIMDErrorCode -> Text -> Decoder HError
-buildHError mErrCode msg = Decoder $ withRunInIO $ \run -> do
-  docFPtr <- run $ asks hDocument
-  pth <- run (asks hPath >>= runDecoder . decodeUtfOrThrow)
+buildHError mErrCode msg = do
+  docFPtr <- asks hDocument
+  pth <- asks hPath >>= decodeUtfOrThrow
   case mErrCode of
-    c | c == Just EMPTY -> pure $ HError pth msg "" ""
-      | c == Just INSUFFICIENT_PADDING -> pure $ HError pth msg "" ""
-      | c == Just UTF8_ERROR -> pure $ HError pth msg "" ""
-      | c == Just UNESCAPED_CHARS -> pure $ HError pth msg "" ""
-      | c == Just UNCLOSED_STRING -> pure $ HError pth msg "" ""
-    _ -> alloca $ \errPtr -> run . runDecoder $
+    Just c
+      | c `elem` [EMPTY, INSUFFICIENT_PADDING, UTF8_ERROR, UNCLOSED_STRING, UNESCAPED_CHARS]
+      -> pure $ HError pth msg "" ""
+    _
+      ->
+      withRunInIO $ \run ->
+      alloca $ \errPtr -> run $
       alloca $ \locStrPtr ->
-        alloca $ \lenPtr ->
-        withDocumentPointer docFPtr $ \docPtr -> do
-          liftIO $ currentLocationImpl docPtr locStrPtr errPtr
-          errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
-          if errCode == OUT_OF_BOUNDS
-            then pure $ HError pth msg "out of bounds" ""
-            else
-              allocaBytes 128 $ \dbStrPtr -> do
-                locStr <- liftIO $ peekCString =<< peek locStrPtr
-                liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
-                len <- fmap fromIntegral . liftIO $ peek lenPtr
-                debugStr <- peekCStringLen (dbStrPtr, len)
-                pure $ HError pth msg (T.pack $ Prelude.take 20 locStr) (T.pack debugStr)
+      alloca $ \lenPtr ->
+      withDocumentPointer docFPtr $ \docPtr -> do
+        liftIO $ currentLocationImpl docPtr locStrPtr errPtr
+        errCode <- toEnum . fromIntegral <$> liftIO (peek errPtr)
+        if errCode == OUT_OF_BOUNDS
+          then pure $ HError pth msg "out of bounds" ""
+          else allocaBytes 128 $ \dbStrPtr -> do
+            locStr <- liftIO $ peekCString =<< peek locStrPtr
+            liftIO $ toDebugStringImpl docPtr dbStrPtr lenPtr
+            len <- fmap fromIntegral . liftIO $ peek lenPtr
+            debugStr <- peekCStringLen (dbStrPtr, len)
+            pure $ HError pth msg (T.pack $ Prelude.take 20 locStr) (T.pack debugStr)
 
 handleError :: Text -> ErrPtr -> Decoder ()
 handleError pre errPtr = do
@@ -383,6 +385,9 @@ newtype Pointer = Pointer BSC.ByteString
 mkPointer :: BSC.ByteString -> Pointer
 mkPointer = Pointer
 
+pointerFromText :: T.Text -> Pointer
+pointerFromText = Pointer . T.encodeUtf8
+
 withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
 withParserPointer parserFPtr f =
   withForeignPtr parserFPtr $ f . Parser
@@ -393,11 +398,12 @@ withDocumentPointer docFPtr f =
 
 withDocument :: (Value -> Decoder a) -> InputBuffer -> Decoder a
 withDocument f inputPtr =
-  allocaValue $ \valPtr -> Decoder $ withRunInIO $ \run ->
+  allocaValue $ \valPtr ->
+  withRunInIO $ \run ->
   alloca $ \errPtr -> run $ do
     docFPtr <- asks hDocument
     parserFPtr <- asks hParser
-    runDecoder . withParserPointer parserFPtr $ \parserPtr ->
+    withParserPointer parserFPtr $ \parserPtr ->
       withDocumentPointer docFPtr $ \docPtr -> do
         liftIO $ getIterator parserPtr inputPtr docPtr errPtr
         handleError "" errPtr
@@ -409,16 +415,15 @@ withDocument f inputPtr =
 -- Be careful where you use this because it rewinds the document on each
 -- successive call.
 atPointer :: Pointer -> (Value -> Decoder a) -> Decoder a
-atPointer (Pointer jptr) f = Decoder $ do
-  docFPtr <- asks hDocument
-  runDecoder . withDocumentPointer docFPtr $ \docPtr ->
-    withRunInIO $ \run ->
-      Unsafe.unsafeUseAsCStringLen jptr $ \(cstr, len) -> run $
-        allocaValue $ \vPtr ->
-          alloca $ \errPtr -> withPath jptr $ do
-          liftIO $ atPointerImpl cstr len docPtr vPtr errPtr
-          handleError "" errPtr
-          f vPtr
+atPointer (Pointer jptr) f = asks hDocument >>= \docFPtr ->
+  withDocumentPointer docFPtr $ \docPtr ->
+  withRunInIO $ \run ->
+  Unsafe.unsafeUseAsCStringLen jptr $ \(cstr, len) -> run $
+  allocaValue $ \vPtr ->
+  alloca $ \errPtr -> withPath jptr $ do
+    liftIO $ atPointerImpl cstr len docPtr vPtr errPtr
+    handleError "" errPtr
+    f vPtr
 
 -- | Helper to work with an Object parsed from a Value.
 withObject :: (Object -> Decoder a) -> Value -> Decoder a
@@ -441,8 +446,7 @@ withObjectIter f objPtr = withRunInIO $ \run ->
 -- | Execute a function on each Field in an ObjectIter and
 -- accumulate key-value tuples into a list.
 iterateOverFields :: (Text -> Decoder a) -> (Value -> Decoder b) -> ObjectIter -> Decoder [(a, b)]
-iterateOverFields fk fv iterPtr =
-  withRunInIO $ \runInIO ->
+iterateOverFields fk fv iterPtr = withRunInIO $ \runInIO ->
   alloca $ \errPtr ->
   alloca $ \lenPtr ->
   alloca $ \keyPtr -> runInIO $
@@ -493,32 +497,28 @@ withField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
   Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
-    alloca $ \errPtr -> withPath (dot key) $ do
+  alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldImpl objPtr cstr len vPtr errPtr
     handleError "" errPtr
     f vPtr
 {-# INLINE withField #-}
 
 withPath :: ByteString -> Decoder a -> Decoder a
-withPath key d =
-  Decoder . local (\st -> st { hPath = hPath st <> key }) $ runDecoder d
+withPath key =
+  local $ \st -> st { hPath = hPath st <> key }
 {-# INLINE withPath #-}
 
 removePath :: ByteString -> Decoder a -> Decoder a
-removePath key d =
-  Decoder . local
-    (\st -> st {
-      hPath = fromMaybe (hPath st) (BSC.stripSuffix key $ hPath st)
-    }) $ runDecoder d
+removePath key =
+  local $ \st -> st { hPath = fromMaybe (hPath st) (BSC.stripSuffix key $ hPath st) }
 {-# INLINE removePath #-}
 
 withPathIndex :: Int -> Decoder a -> Decoder a
 withPathIndex idx =
-  Decoder . local
-    (\st -> st {
-      hPath = fromMaybe (hPath st) (BSC.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
+  local $ \st -> st
+    { hPath = fromMaybe (hPath st) (BSC.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
            <> showInt idx
-    }) . runDecoder
+    }
   where showInt i = dot . BSC.pack $ show i
 {-# INLINE withPathIndex #-}
 
@@ -746,7 +746,7 @@ scientific = withRawByteString parseScientific
 runAtto :: AT.Parser a -> Text -> Decoder a
 runAtto p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
-    Left err -> fail $ "could not parse date: " <> err
+    Left err -> fail $ "Could not parse date: " <> err
     Right r  -> pure r
 {-# INLINE runAtto #-}
 
@@ -801,7 +801,14 @@ zonedTime = withText $ runAtto ATime.zonedTime
 
 -- | A Decoder is intended to be run in IO and will throw exceptions.
 newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+  deriving newtype
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadIO
+    , MonadReader HermesEnv
+    , MonadUnliftIO
+    )
 
 instance Alternative Decoder where
   empty = fail "Unspecified error"
