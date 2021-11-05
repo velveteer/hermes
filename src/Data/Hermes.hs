@@ -602,9 +602,9 @@ getText = fromCStringLen "text" parseText
 
 parseText :: CStringLen -> Decoder Text
 parseText cstr =
-  withRunInIO $ \_ ->
+  withRunInIO $ \run ->
     T.peekCStringLen cstr
-      `catch` \(err :: T.UnicodeException) -> fail $ show err
+      `catch` \(err :: T.UnicodeException) -> run . fail $ show err
 {-# INLINE parseText #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
@@ -750,45 +750,45 @@ scientific :: Value -> Decoder Sci.Scientific
 scientific = withRawByteString parseScientific
 
 -- | Run an attoparsec text parser as a hermes decoder.
-runAtto :: AT.Parser a -> Text -> Decoder a
-runAtto p t =
+runAttoDate :: AT.Parser a -> Text -> Decoder a
+runAttoDate p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
     Left err -> fail $ "Could not parse date: " <> err
     Right r  -> pure r
-{-# INLINE runAtto #-}
+{-# INLINE runAttoDate #-}
 
 -- | ISO 8601 Compatibility
 
 -- | Parse a date of the form @[+,-]YYYY-MM-DD@.
 day :: Value -> Decoder Time.Day
-day = withText $ runAtto ATime.day
+day = withText $ runAttoDate ATime.day
 
 -- | Parse a date of the form @[+,-]YYYY-MM@.
 month :: Value -> Decoder Time.Month
-month = withText $ runAtto ATime.month
+month = withText $ runAttoDate ATime.month
 
 -- | Parse a date of the form @[+,-]YYYY-QN@.
 quarter :: Value -> Decoder Time.Quarter
-quarter = withText $ runAtto ATime.quarter
+quarter = withText $ runAttoDate ATime.quarter
 
 -- | Parse a time of the form @HH:MM[:SS[.SSS]]@.
 timeOfDay :: Value -> Decoder Local.TimeOfDay
-timeOfDay = withText $ runAtto ATime.timeOfDay
+timeOfDay = withText $ runAttoDate ATime.timeOfDay
 
 -- | Parse a time zone, and return 'Nothing' if the offset from UTC is
 -- zero. (This makes some speedups possible.)
 timeZone :: Value -> Decoder (Maybe Local.TimeZone)
-timeZone = withText $ runAtto ATime.timeZone
+timeZone = withText $ runAttoDate ATime.timeZone
 
 -- | Parse a date and time, of the form @YYYY-MM-DD HH:MM[:SS[.SSS]]@.
 -- The space may be replaced with a @T@. The number of seconds is optional
 -- and may be followed by a fractional component.
 localTime :: Value -> Decoder Local.LocalTime
-localTime = withText $ runAtto ATime.localTime
+localTime = withText $ runAttoDate ATime.localTime
 
 -- | Behaves as 'zonedTime', but converts any time zone offset into a UTC time.
 utcTime :: Value -> Decoder Time.UTCTime
-utcTime = withText $ runAtto ATime.utcTime
+utcTime = withText $ runAttoDate ATime.utcTime
 
 -- | Parse a date with time zone info. Acceptable formats:
 --
@@ -802,7 +802,7 @@ utcTime = withText $ runAtto ATime.utcTime
 -- two digits are hours, the @:@ is optional and the second two digits
 -- (also optional) are minutes.
 zonedTime :: Value -> Decoder Local.ZonedTime
-zonedTime = withText $ runAtto ATime.zonedTime
+zonedTime = withText $ runAttoDate ATime.zonedTime
 
 -- Decoding Types and Functions
 

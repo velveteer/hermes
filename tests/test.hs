@@ -14,7 +14,6 @@ import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import qualified Data.Time as Time
-import           Deriving.Aeson (CustomJSON(..), OmitNothingFields)
 import           GHC.Generics (Generic)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
@@ -110,7 +109,9 @@ data PersonOptional =
     , utcTimeField  :: Maybe Time.UTCTime
     }
     deriving stock (Eq, Show, Generic)
-    deriving A.ToJSON via CustomJSON '[OmitNothingFields] PersonOptional
+
+instance A.ToJSON PersonOptional where
+  toJSON = A.genericToJSON A.defaultOptions { A.omitNothingFields = True }
 
 newtype KeyType = KeyType Text
   deriving newtype (Eq, Ord, Show, A.ToJSON, A.ToJSONKey)

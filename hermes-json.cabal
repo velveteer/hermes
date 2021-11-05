@@ -21,6 +21,7 @@ extra-source-files:
 tested-with: 
   , GHC == 8.10.7
   , GHC == 9.0.1
+  , GHC == 9.2.1
 source-repository head
   type: git
   location: git@github.com:velveteer/hermes.git
@@ -48,8 +49,8 @@ library
   build-depends:   
     attoparsec         >= 0.13.1 && < 0.15,
     attoparsec-iso8601 >= 1.0.2.0 && < 1.0.3.0,
-    base               >= 4.13 && < 4.16,
-    bytestring         >= 0.10.10 && < 0.11,
+    base               >= 4.13 && < 4.17,
+    bytestring         >= 0.10.10 && < 0.12,
     deepseq            >= 1.4.4 && < 1.5,
     dlist              >= 0.8 && < 1.1,
     mtl                >= 2.1 && < 2.3,
@@ -113,7 +114,6 @@ test-suite hermes-test
     base,
     bytestring,
     containers     >= 0.6.2 && < 0.7,
-    deriving-aeson >= 0.2 && < 0.3,
     hermes-json,
     scientific,
     text,

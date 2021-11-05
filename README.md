@@ -63,9 +63,41 @@ We benchmark decoding a very small object into a Map, full decoding of a large-i
 
 #### Non-threaded runtime
 
+| Name                                                | Mean (ps)    | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
+| --------------------------------------------------- | ------------ | ------------ | ---------- | --------- | ----------- |
+| All.Small Map.Hermes Decode                         | 2073683      | 116108       | 5920       | 144       | 7340032     |
+| All.Small Map.Aeson Lazy                            | 3119109      | 287164       | 20403      | 1         | 7340032     |
+| All.Small Map.Aeson Strict                          | 3098198      | 248160       | 20430      | 1         | 7340032     |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 139900789600 | 6273457310   | 243122041  | 77176972  | 84934656    |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 478873669400 | 36929408600  | 1212514112 | 267988310 | 175112192   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 374412501600 | 27683106516  | 1212276586 | 200576603 | 175112192   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 148551506200 | 12165565302  | 243119212  | 77720561  | 175112192   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 469928637100 | 10927099374  | 1213065712 | 264354036 | 209715200   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 373397122000 | 27123424068  | 1212031690 | 200457041 | 209715200   |
+| All.Partial Twitter.Hermes Decode                   | 699162836    | 45876788     | 833588     | 9790      | 209715200   |
+| All.Partial Twitter.Aeson Lazy                      | 11451427700  | 882859564    | 47256818   | 4667128   | 209715200   |
+| All.Partial Twitter.Aeson Strict                    | 13875201250  | 831962632    | 52676321   | 5519342   | 209715200   |
+|                                                     |
+
 ![](./hermesbench/bench.svg)
 
 #### Threaded runtime
+
+| Name                                                | Mean (ps)    | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
+| --------------------------------------------------- | ------------ | ------------ | ---------- | --------- | ----------- |
+| All.Small Map.Hermes Decode                         | 2172824      | 137222       | 5920       | 144       | 7340032     |
+| All.Small Map.Aeson Lazy                            | 3048579      | 94580        | 20429      | 2         | 7340032     |
+| All.Small Map.Aeson Strict                          | 3065674      | 216436       | 20405      | 2         | 7340032     |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 140921102900 | 2817129470   | 243125382  | 77555340  | 87031808    |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 478083391300 | 21181653006  | 1212937927 | 264327260 | 209715200   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 379782210400 | 28807295952  | 1212295703 | 200697524 | 209715200   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 152736699750 | 10544418924  | 243761861  | 82838167  | 209715200   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 478335865400 | 4172548908   | 1213065840 | 264461764 | 209715200   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 381039599200 | 31868510580  | 1212032092 | 200566562 | 209715200   |
+| All.Partial Twitter.Hermes Decode                   | 726157648    | 54153372     | 830076     | 9875      | 209715200   |
+| All.Partial Twitter.Aeson Lazy                      | 11490171200  | 438712512    | 47461581   | 4697608   | 209715200   |
+| All.Partial Twitter.Aeson Strict                    | 14369213450  | 1336834190   | 53125877   | 5550358   | 209715200   |
+|                                                     |
 
 ![](./hermesbench/bench_threaded.svg)
 
