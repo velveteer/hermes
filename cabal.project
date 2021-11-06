@@ -1,2 +1,10 @@
 packages:
   ./hermes-json.cabal
+
+-- Tests need some relaxed upper bounds for GHC 9.2.1
+allow-newer:
+    aeson:*
+  , hedgehog:*
+  , hsc2hs:*
+  , tasty-hedgehog:*
+  , terminal-size:*

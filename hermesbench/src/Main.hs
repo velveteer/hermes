@@ -7,7 +7,6 @@
 module Main where
 
 import           Control.DeepSeq (NFData)
-import           Control.Monad (void)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import           Data.Map.Strict (Map)
@@ -17,8 +16,9 @@ import           Data.Text (Text)
 import           GHC.Generics (Generic)
 import           Test.Tasty (withResource)
 import           Test.Tasty.Bench
-import qualified Waargonaut.Attoparsec as WA
-import qualified Waargonaut.Decode as D
+-- import qualified Waargonaut.Attoparsec as WA
+-- import qualified Waargonaut.Decode as D
+-- ^ TODO waargonaut does not yet compile on GHC 9.2.1
 
 import           Data.Hermes
 
@@ -34,8 +34,8 @@ main = defaultMain
           nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe (Map Text Int)))
       , bench "Aeson Strict" $
           nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe (Map Text Int)))
-      , bench "Waargonaut Attoparsec" $
-          nfIO (void $ WA.decodeAttoparsecByteString (D.objectAsKeyValues D.text D.int) =<< input)
+      -- , bench "Waargonaut Attoparsec" $
+      --     nfIO (void $ WA.decodeAttoparsecByteString (D.objectAsKeyValues D.text D.int) =<< input)
       ]
   , withResource (BS.readFile "json/persons9000.json") (const $ pure ()) $ \input ->
     bgroup "Full Persons Array"
@@ -74,8 +74,8 @@ main = defaultMain
         nfIO ((Aeson.decodeStrict <$> input) :: IO (Maybe Twitter))
     , bench "Aeson Strict" $
         nfIO ((Aeson.decodeStrict' <$> input) :: IO (Maybe Twitter))
-    , bench "Waargonaut Attoparsec" $
-        nfIO (void $ WA.decodeAttoparsecByteString twitterDecoder =<< input)
+    -- , bench "Waargonaut Attoparsec" $
+    --     nfIO (void $ WA.decodeAttoparsecByteString twitterDecoder =<< input)
     ]
   ]
 
@@ -139,37 +139,37 @@ decodeFriend = withObject $ \obj ->
     <$> atOrderedKey "id" int obj
     <*> atOrderedKey "name" text obj
 
-personDecoder :: Monad f => D.Decoder f Person
-personDecoder =
-  Person
-    <$> D.atKey "_id" D.text
-    <*> D.atKey "index" D.int
-    <*> D.atKey "guid" D.text
-    <*> D.atKey "isActive" D.bool
-    <*> D.atKey "balance" D.text
-    <*> D.atKey "picture" (D.maybeOrNull D.text)
-    <*> D.atKey "age" D.int
-    <*> D.atKey "eyeColor" D.text
-    <*> D.atKey "name" D.text
-    <*> D.atKey "gender" D.text
-    <*> D.atKey "company" D.text
-    <*> D.atKey "email" D.text
-    <*> D.atKey "phone" D.text
-    <*> D.atKey "address" D.text
-    <*> D.atKey "about" D.text
-    <*> D.atKey "registered" D.text
-    <*> D.atKey "latitude" D.scientific
-    <*> D.atKey "longitude" D.scientific
-    <*> D.atKey "tags" (D.list D.text)
-    <*> D.atKey "friends" (D.list friendDecoder)
-    <*> D.atKey "greeting" (D.maybeOrNull D.text)
-    <*> D.atKey "favoriteFruit" D.text
+-- personDecoder :: Monad f => D.Decoder f Person
+-- personDecoder =
+--   Person
+--     <$> D.atKey "_id" D.text
+--     <*> D.atKey "index" D.int
+--     <*> D.atKey "guid" D.text
+--     <*> D.atKey "isActive" D.bool
+--     <*> D.atKey "balance" D.text
+--     <*> D.atKey "picture" (D.maybeOrNull D.text)
+--     <*> D.atKey "age" D.int
+--     <*> D.atKey "eyeColor" D.text
+--     <*> D.atKey "name" D.text
+--     <*> D.atKey "gender" D.text
+--     <*> D.atKey "company" D.text
+--     <*> D.atKey "email" D.text
+--     <*> D.atKey "phone" D.text
+--     <*> D.atKey "address" D.text
+--     <*> D.atKey "about" D.text
+--     <*> D.atKey "registered" D.text
+--     <*> D.atKey "latitude" D.scientific
+--     <*> D.atKey "longitude" D.scientific
+--     <*> D.atKey "tags" (D.list D.text)
+--     <*> D.atKey "friends" (D.list friendDecoder)
+--     <*> D.atKey "greeting" (D.maybeOrNull D.text)
+--     <*> D.atKey "favoriteFruit" D.text
 
-friendDecoder :: Monad f => D.Decoder f Friend
-friendDecoder =
-  Friend
-    <$> D.atKey "id" D.int
-    <*> D.atKey "name" D.text
+-- friendDecoder :: Monad f => D.Decoder f Friend
+-- friendDecoder =
+--   Friend
+--     <$> D.atKey "id" D.int
+--     <*> D.atKey "name" D.text
 
 data Friend =
   Friend
@@ -237,7 +237,33 @@ data PersonUnordered =
     , friends       :: [Friend]
     }
     deriving stock (Show, Generic)
-    deriving anyclass (NFData, Aeson.FromJSON)
+    deriving anyclass NFData
+
+instance Aeson.FromJSON PersonUnordered where
+  parseJSON = Aeson.withObject "Person" $ \obj ->
+    PersonUnordered
+      <$> obj Aeson..: "favoriteFruit"
+      <*> obj Aeson..: "isActive"
+      <*> obj Aeson..: "longitude"
+      <*> obj Aeson..: "balance"
+      <*> obj Aeson..: "email"
+      <*> obj Aeson..: "latitude"
+      <*> obj Aeson..: "age"
+      <*> obj Aeson..: "eyeColor"
+      <*> obj Aeson..: "index"
+      <*> obj Aeson..: "guid"
+      <*> obj Aeson..: "name"
+      <*> obj Aeson..: "greeting"
+      <*> obj Aeson..: "company"
+      <*> obj Aeson..: "picture"
+      <*> obj Aeson..: "phone"
+      <*> obj Aeson..: "_id"
+      <*> obj Aeson..: "address"
+      <*> obj Aeson..: "about"
+      <*> obj Aeson..: "gender"
+      <*> obj Aeson..: "registered"
+      <*> obj Aeson..: "tags"
+      <*> obj Aeson..: "friends"
 
 decodePersonUnordered :: Value -> Decoder PersonUnordered
 decodePersonUnordered = withObject $ \obj ->
@@ -265,31 +291,31 @@ decodePersonUnordered = withObject $ \obj ->
     <*> atKey "tags" (list text) obj
     <*> atKey "friends" (list decodeFriend) obj
 
-personUnorderedDecoder :: Monad f => D.Decoder f PersonUnordered
-personUnorderedDecoder =
-  PersonUnordered
-    <$> D.atKey "favoriteFruit" D.text
-    <*> D.atKey "isActive" D.bool
-    <*> D.atKey "longitude" D.scientific
-    <*> D.atKey "balance" D.text
-    <*> D.atKey "email" D.text
-    <*> D.atKey "latitude" D.scientific
-    <*> D.atKey "age" D.int
-    <*> D.atKey "eyeColor" D.text
-    <*> D.atKey "index" D.int
-    <*> D.atKey "guid" D.text
-    <*> D.atKey "name" D.text
-    <*> D.atKey "greeting" (D.maybeOrNull D.text)
-    <*> D.atKey "company" D.text
-    <*> D.atKey "picture" (D.maybeOrNull D.text)
-    <*> D.atKey "phone" D.text
-    <*> D.atKey "_id" D.text
-    <*> D.atKey "address" D.text
-    <*> D.atKey "about" D.text
-    <*> D.atKey "gender" D.text
-    <*> D.atKey "registered" D.text
-    <*> D.atKey "tags" (D.list D.text)
-    <*> D.atKey "friends" (D.list friendDecoder)
+-- personUnorderedDecoder :: Monad f => D.Decoder f PersonUnordered
+-- personUnorderedDecoder =
+--   PersonUnordered
+--     <$> D.atKey "favoriteFruit" D.text
+--     <*> D.atKey "isActive" D.bool
+--     <*> D.atKey "longitude" D.scientific
+--     <*> D.atKey "balance" D.text
+--     <*> D.atKey "email" D.text
+--     <*> D.atKey "latitude" D.scientific
+--     <*> D.atKey "age" D.int
+--     <*> D.atKey "eyeColor" D.text
+--     <*> D.atKey "index" D.int
+--     <*> D.atKey "guid" D.text
+--     <*> D.atKey "name" D.text
+--     <*> D.atKey "greeting" (D.maybeOrNull D.text)
+--     <*> D.atKey "company" D.text
+--     <*> D.atKey "picture" (D.maybeOrNull D.text)
+--     <*> D.atKey "phone" D.text
+--     <*> D.atKey "_id" D.text
+--     <*> D.atKey "address" D.text
+--     <*> D.atKey "about" D.text
+--     <*> D.atKey "gender" D.text
+--     <*> D.atKey "registered" D.text
+--     <*> D.atKey "tags" (D.list D.text)
+--     <*> D.atKey "friends" (D.list friendDecoder)
 
 data Twitter =
   Twitter
@@ -343,24 +369,24 @@ decodeUser = withObject $ \obj ->
     <*> atOrderedKey "description" text obj
     <*> atOrderedKey "url" (nullable text) obj
 
-twitterDecoder :: Monad f => D.Decoder f Twitter
-twitterDecoder =
-  Twitter
-    <$> D.atKey "statuses" (D.list statusDecoder)
+-- twitterDecoder :: Monad f => D.Decoder f Twitter
+-- twitterDecoder =
+--   Twitter
+--     <$> D.atKey "statuses" (D.list statusDecoder)
 
-statusDecoder :: Monad f => D.Decoder f Status
-statusDecoder = D.withCursor $ \curs -> do
-  u       <- D.fromKey "user" userDecoder curs
-  mdMap   <- Map.fromList <$> D.fromKey "metadata" (D.objectAsKeyValues D.text D.text) curs
-  newCurs <- D.moveToKey "metadata" curs
-  result  <- D.fromKey "result_type" D.text newCurs
-  iso     <- D.fromKey "iso_language_code" D.text newCurs
-  pure $ Status u mdMap result iso
+-- statusDecoder :: Monad f => D.Decoder f Status
+-- statusDecoder = D.withCursor $ \curs -> do
+--   u       <- D.fromKey "user" userDecoder curs
+--   mdMap   <- Map.fromList <$> D.fromKey "metadata" (D.objectAsKeyValues D.text D.text) curs
+--   newCurs <- D.moveToKey "metadata" curs
+--   result  <- D.fromKey "result_type" D.text newCurs
+--   iso     <- D.fromKey "iso_language_code" D.text newCurs
+--   pure $ Status u mdMap result iso
 
-userDecoder :: Monad f => D.Decoder f User
-userDecoder =
-  User
-    <$> D.atKey "screen_name" D.text
-    <*> D.atKey "location" D.text
-    <*> D.atKey "description" D.text
-    <*> D.atKey "url" (D.maybeOrNull D.text)
+-- userDecoder :: Monad f => D.Decoder f User
+-- userDecoder =
+--   User
+--     <$> D.atKey "screen_name" D.text
+--     <*> D.atKey "location" D.text
+--     <*> D.atKey "description" D.text
+--     <*> D.atKey "url" (D.maybeOrNull D.text)

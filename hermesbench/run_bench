@@ -1,2 +1,2 @@
 #! /bin/bash
-exec cabal bench --benchmark-options '--timeout=10 --svg=bench.svg +RTS -T'
+exec cabal bench --benchmark-options '--timeout=10 --csv=bench.csv --svg=bench.svg +RTS -T'
