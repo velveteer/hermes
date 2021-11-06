@@ -36,6 +36,7 @@ module Data.Hermes
   , bool
   , char
   , double
+  , doubleNonFinite
   , int
   , scientific
   , string
@@ -86,6 +87,7 @@ import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
@@ -527,6 +529,15 @@ getDouble valPtr = withRunInIO $ \run ->
     liftIO $ peek ptr
 {-# INLINE getDouble #-}
 
+getDoubleNonFinite :: Value -> Decoder Double
+getDoubleNonFinite = withRawByteString $ \bs ->
+  case BSC.strip bs of
+    "\"+inf\"" -> pure $ 1/0
+    "\"-inf\"" -> pure $ (-1)/0
+    "null"     -> pure $ 0/0
+    _          -> Sci.toRealFloat <$> parseScientific bs
+{-# INLINE getDoubleNonFinite #-}
+
 -- | Helper to work with a Double parsed from a Value.
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
@@ -719,6 +730,13 @@ bool = getBool
 -- | Parse a JSON number into a Haskell Double.
 double :: Value -> Decoder Double
 double = getDouble
+
+-- | Parse an IEEE 754 floating point number into a Haskell Double.
+-- This follows the encoding convention used in the aeson library.
+-- If you do not need to handle non-finite floating point values
+-- then use `double` instead, it has better performance.
+doubleNonFinite :: Value -> Decoder Double
+doubleNonFinite = getDoubleNonFinite
 
 -- | Parse a Scientific from a Value.
 scientific :: Value -> Decoder Sci.Scientific
