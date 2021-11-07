@@ -328,10 +328,6 @@ data Status =
   Status
     { user              :: User
     , metadata          :: Map Text Text
-    -- collapsed metadata object fields
-    -- this tests iterating over the same object twice
-    , result_type       :: Text
-    , iso_language_code :: Text
     }
     deriving stock (Show, Generic)
     deriving anyclass (NFData, Aeson.FromJSON)
@@ -355,11 +351,7 @@ decodeStatus :: Value -> Decoder Status
 decodeStatus = withObject $ \obj -> do
   u <- atKey "user" decodeUser obj
   mdMap <- Map.fromList <$> atKey "metadata" (objectAsKeyValues pure text) obj
-  md <- atKey "metadata" pure obj
-  flip withObject md $ \m -> do
-    result <- atKey "result_type" text m
-    iso <- atKey "iso_language_code" text m
-    pure $ Status u mdMap result iso
+  pure $ Status u mdMap
 
 decodeUser :: Value -> Decoder User
 decodeUser = withObject $ \obj ->

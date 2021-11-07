@@ -82,7 +82,8 @@ import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Reader (MonadReader, asks, local)
 import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
-import qualified Data.Attoparsec.ByteString.Char8 as A (endOfInput, parseOnly, scientific)
+import qualified Data.Attoparsec.ByteString as A
+import qualified Data.Attoparsec.ByteString.Char8 as A (scientific)
 import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
@@ -95,8 +96,6 @@ import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Data.Text.Encoding.Error as T
-import qualified Data.Text.Foreign as T
 import qualified Data.Time as Time
 import qualified Data.Time.Calendar.Month.Compat as Time
 import qualified Data.Time.Calendar.Quarter.Compat as Time
@@ -601,11 +600,23 @@ getText = fromCStringLen "text" parseText
 {-# INLINE getText #-}
 
 parseText :: CStringLen -> Decoder Text
-parseText cstr =
-  withRunInIO $ \run ->
-    T.peekCStringLen cstr
-      `catch` \(err :: T.UnicodeException) -> run . fail $ show err
+parseText cstr = do
+  bs <- liftIO $ Unsafe.unsafePackCStringLen cstr
+  case A.parseOnly latinTextAtto bs of
+    Left err       -> fail $ "Could not parse text: " <> err
+    Right Nothing  -> pure $! T.decodeUtf8 bs
+    Right (Just r) -> pure $! r
 {-# INLINE parseText #-}
+
+latinTextAtto :: A.Parser (Maybe Text)
+latinTextAtto = do
+  s <- A.takeWhile (\w -> w /= 92 && w >= 0x20 && w < 0x80)
+  let txt = T.decodeLatin1 s
+  mw <- A.peekWord8
+  case mw of
+    Nothing -> pure $! Just txt
+    _       -> pure Nothing
+{-# INLINE latinTextAtto #-}
 
 getRawByteString :: Value -> Decoder BSC.ByteString
 getRawByteString valPtr = withRunInIO $ \run ->
