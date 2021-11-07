@@ -25,7 +25,6 @@ module Data.Hermes
   -- * Object field accessors
   , Key
   , mkKey
-  , keyFromText
   , atKey
   , atOptionalKey
   , atOrderedKey
@@ -33,7 +32,6 @@ module Data.Hermes
   , Pointer
   , mkPointer
   , atPointer
-  , pointerFromText
     -- * Value decoders
   , bool
   , char
@@ -83,11 +81,11 @@ import           Control.Monad.Reader (MonadReader, asks, local)
 import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
 import qualified Data.Attoparsec.ByteString as A
-import qualified Data.Attoparsec.ByteString.Char8 as A (scientific)
+import qualified Data.Attoparsec.ByteString.Char8 as AC (scientific)
 import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
@@ -261,7 +259,7 @@ typePrefix typ = "Error while getting value of type " <> typ <> ". "
 buildHError :: Maybe SIMDErrorCode -> Text -> Decoder HError
 buildHError mErrCode msg = do
   docFPtr <- asks hDocument
-  pth <- asks hPath >>= decodeUtfOrThrow
+  pth <- asks hPath
   case mErrCode of
     Just c
       | c `elem`
@@ -375,24 +373,18 @@ newtype ArrayIter = ArrayIter (Ptr JSONArrayIter)
 newtype ObjectIter = ObjectIter (Ptr JSONObjectIter)
 
 -- | Public-facing type for object keys. Use OverloadedStrings for convenience.
-newtype Key = Key BSC.ByteString
+newtype Key = Key Text
   deriving newtype (IsString, Eq, Ord, Show)
 
-mkKey :: BSC.ByteString -> Key
+mkKey :: Text -> Key
 mkKey = Key
 
-keyFromText :: T.Text -> Key
-keyFromText = Key . T.encodeUtf8
-
 -- | Public-facing type for a JSON pointer. Use OverloadedStrings for convenience.
-newtype Pointer = Pointer BSC.ByteString
+newtype Pointer = Pointer Text
   deriving newtype (IsString, Eq, Ord, Show)
 
-mkPointer :: BSC.ByteString -> Pointer
+mkPointer :: Text -> Pointer
 mkPointer = Pointer
-
-pointerFromText :: T.Text -> Pointer
-pointerFromText = Pointer . T.encodeUtf8
 
 withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
 withParserPointer parserFPtr f =
@@ -424,7 +416,7 @@ atPointer :: Pointer -> (Value -> Decoder a) -> Decoder a
 atPointer (Pointer jptr) f = asks hDocument >>= \docFPtr ->
   withDocumentPointer docFPtr $ \docPtr ->
   withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCStringLen jptr $ \(cstr, len) -> run $
+  Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 jptr) $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath jptr $ do
     liftIO $ atPointerImpl cstr len docPtr vPtr errPtr
@@ -468,18 +460,18 @@ iterateOverFields fk fv iterPtr = withRunInIO $ \runInIO ->
             kLen <- fmap fromIntegral . liftIO $ peek lenPtr
             kStr <- liftIO $ peek keyPtr
             keyTxt <- parseText (kStr, kLen)
-            withPath (dot $ T.encodeUtf8 keyTxt) $ do
+            withPath (dot keyTxt) $ do
               k <- fk keyTxt
               v <- fv valPtr
               liftIO $ objectIterMoveNextImpl iterPtr
-              removePath (dot $ T.encodeUtf8 keyTxt) $
+              removePath (dot keyTxt) $
                 go (acc <> DList.singleton (k, v)) keyPtr lenPtr valPtr errPtr
         else
           pure $ DList.toList acc
 
-withUnorderedField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
+withUnorderedField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withUnorderedField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
+  Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr errPtr
@@ -487,9 +479,9 @@ withUnorderedField f objPtr key = withRunInIO $ \run ->
     f vPtr
 {-# INLINE withUnorderedField #-}
 
-withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder (Maybe a)
+withUnorderedOptionalField :: (Value -> Decoder a) -> Object -> Text -> Decoder (Maybe a)
 withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
+  Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr errPtr
@@ -499,9 +491,9 @@ withUnorderedOptionalField f objPtr key = withRunInIO $ \run ->
        | otherwise                -> Nothing <$ handleError "" errPtr
 {-# INLINE withUnorderedOptionalField #-}
 
-withField :: (Value -> Decoder a) -> Object -> ByteString -> Decoder a
+withField :: (Value -> Decoder a) -> Object -> Text -> Decoder a
 withField f objPtr key = withRunInIO $ \run ->
-  Unsafe.unsafeUseAsCStringLen key $ \(cstr, len) -> run $
+  Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) -> run $
   allocaValue $ \vPtr ->
   alloca $ \errPtr -> withPath (dot key) $ do
     liftIO $ findFieldImpl objPtr cstr len vPtr errPtr
@@ -509,32 +501,28 @@ withField f objPtr key = withRunInIO $ \run ->
     f vPtr
 {-# INLINE withField #-}
 
-withPath :: ByteString -> Decoder a -> Decoder a
+withPath :: Text -> Decoder a -> Decoder a
 withPath key =
   local $ \st -> st { hPath = hPath st <> key }
 {-# INLINE withPath #-}
 
-removePath :: ByteString -> Decoder a -> Decoder a
+removePath :: Text -> Decoder a -> Decoder a
 removePath key =
-  local $ \st -> st { hPath = fromMaybe (hPath st) (BSC.stripSuffix key $ hPath st) }
+  local $ \st -> st { hPath = fromMaybe (hPath st) (T.stripSuffix key $ hPath st) }
 {-# INLINE removePath #-}
 
 withPathIndex :: Int -> Decoder a -> Decoder a
 withPathIndex idx =
   local $ \st -> st
-    { hPath = fromMaybe (hPath st) (BSC.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
+    { hPath = fromMaybe (hPath st) (T.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
            <> showInt idx
     }
-  where showInt i = dot . BSC.pack $ show i
+  where showInt i = dot . T.pack $ show i
 {-# INLINE withPathIndex #-}
 
-dot :: ByteString -> ByteString
-dot = BSC.cons '/'
+dot :: Text -> Text
+dot = T.cons '/'
 {-# INLINE dot #-}
-
-decodeUtfOrThrow :: ByteString -> Decoder Text
-decodeUtfOrThrow = either (fail . show) pure . T.decodeUtf8'
-{-# INLINE decodeUtfOrThrow #-}
 
 getInt :: Value -> Decoder Int
 getInt valPtr = withRunInIO $ \run ->
@@ -561,10 +549,10 @@ withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
 
 -- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
-parseScientific :: BSC.ByteString -> Decoder Sci.Scientific
+parseScientific :: BS.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> fail $ "Failed to parse Scientific: " <> err) pure
-  . A.parseOnly (A.scientific <* A.endOfInput)
+  . A.parseOnly (AC.scientific <* A.endOfInput)
 {-# INLINE parseScientific #-}
 
 getBool :: Value -> Decoder Bool
@@ -618,18 +606,18 @@ latinTextAtto = do
     _       -> pure Nothing
 {-# INLINE latinTextAtto #-}
 
-getRawByteString :: Value -> Decoder BSC.ByteString
+getRawByteString :: Value -> Decoder BS.ByteString
 getRawByteString valPtr = withRunInIO $ \run ->
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $ do
     liftIO $ getRawJSONTokenImpl valPtr strPtr lenPtr
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
-    liftIO $ BSC.packCStringLen (str, len)
+    liftIO $ BS.packCStringLen (str, len)
 {-# INLINE getRawByteString #-}
 
 -- | Helper to work with a raw ByteString.Char8 parsed from a Value.
-withRawByteString :: (BSC.ByteString -> Decoder a) -> Value -> Decoder a
+withRawByteString :: (BS.ByteString -> Decoder a) -> Value -> Decoder a
 withRawByteString f = getRawByteString >=> f
 
 -- | Helper to work with a String parsed from a Value.
@@ -842,7 +830,7 @@ data HermesEnv =
   HermesEnv
     { hParser   :: !(ForeignPtr SIMDParser)
     , hDocument :: !(ForeignPtr SIMDDocument)
-    , hPath     :: !ByteString
+    , hPath     :: !Text
     }
 
 -- | Make a new HermesEnv. This allocates foreign references to

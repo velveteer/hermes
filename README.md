@@ -66,18 +66,18 @@ We benchmark decoding a very small object into a Map, full decoding of a large-i
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                                | Mean (ps)    | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------ | ------------ | ---------- | --------- | ----------- |
-| All.Small Map.Hermes Decode                         | 1982529      | 36482        | 5371       | 145       | 7340032     |
-| All.Small Map.Aeson Lazy                            | 3338516      | 159688       | 20454      | 1         | 7340032     |
-| All.Small Map.Aeson Strict                          | 3141260      | 259634       | 20405      | 1         | 7340032     |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 146654697000 | 813889612    | 219364770  | 81539466  | 110100480   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 480913236300 | 1687121786   | 1212937799 | 264219495 | 209715200   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 377464320800 | 32524056392  | 1212294354 | 190966058 | 220200960   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 157947334400 | 2160809532   | 219309207  | 82430833  | 220200960   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 483623481900 | 19303336674  | 1213065712 | 264354367 | 220200960   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 385585434600 | 14999288186  | 1212031719 | 200457386 | 220200960   |
-| All.Partial Twitter.Hermes Decode                   | 545629325    | 28704550     | 581707     | 7425      | 220200960   |
-| All.Partial Twitter.Aeson Lazy                      | 18364800587  | 1245764144   | 53282167   | 7581682   | 220200960   |
-| All.Partial Twitter.Aeson Strict                    | 14943369800  | 815089710    | 53294115   | 5941838   | 220200960   |
+| All.Small Map.Hermes Decode                         | 1985181      | 33168        | 5371       | 145       | 7340032     |
+| All.Small Map.Aeson Lazy                            | 3072418      | 205616       | 20403      | 1         | 7340032     |
+| All.Small Map.Aeson Strict                          | 3046188      | 193460       | 20379      | 1         | 7340032     |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 146348578900 | 5665040430   | 223417986  | 82631620  | 112197632   |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 491444302600 | 29791492328  | 1212519290 | 267994655 | 174063616   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 383673728000 | 26706629940  | 1212295420 | 200592835 | 174063616   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 153658870400 | 15332972138  | 222902871  | 74461446  | 174063616   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 488736963400 | 42471561220  | 1212644540 | 268070112 | 175112192   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 380107325000 | 12409332040  | 1212031966 | 200460577 | 175112192   |
+| All.Partial Twitter.Hermes Decode                   | 545568378    | 33791360     | 594763     | 7621      | 175112192   |
+| All.Partial Twitter.Aeson Lazy                      | 17444231950  | 1036445904   | 52866067   | 7515611   | 175112192   |
+| All.Partial Twitter.Aeson Strict                    | 15200710218  | 900054674    | 53547832   | 5847300   | 175112192   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) --> 
 
@@ -88,18 +88,18 @@ We benchmark decoding a very small object into a Map, full decoding of a large-i
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES_THREADED) -->
 | Name                                                | Mean (ps)    | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------ | ------------ | ---------- | --------- | ----------- |
-| All.Small Map.Hermes Decode                         | 1957028      | 52880        | 5372       | 145       | 7340032     |
-| All.Small Map.Aeson Lazy                            | 3297292      | 196860       | 20474      | 2         | 7340032     |
-| All.Small Map.Aeson Strict                          | 3196622      | 64022        | 20450      | 2         | 7340032     |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 143924446900 | 13817903708  | 219367568  | 82551678  | 110100480   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 488007247000 | 11631634306  | 1212937927 | 264327224 | 209715200   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 385014618300 | 27240008628  | 1212294483 | 191065602 | 220200960   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 144679418000 | 7284317902   | 218896955  | 75271635  | 220200960   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 516519820200 | 50814507940  | 1212651513 | 268192450 | 220200960   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 380676489650 | 1890159218   | 1212042789 | 192027242 | 220200960   |
-| All.Partial Twitter.Hermes Decode                   | 557464093    | 38100676     | 581723     | 7458      | 220200960   |
-| All.Partial Twitter.Aeson Lazy                      | 18375802000  | 1834476876   | 52239338   | 7237241   | 220200960   |
-| All.Partial Twitter.Aeson Strict                    | 15612833050  | 585186144    | 53547960   | 5873675   | 220200960   |
+| All.Small Map.Hermes Decode                         | 1901488      | 189650       | 5345       | 144       | 7340032     |
+| All.Small Map.Aeson Lazy                            | 3238454      | 220796       | 20455      | 2         | 7340032     |
+| All.Small Map.Aeson Strict                          | 3025432      | 195222       | 20380      | 2         | 7340032     |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 144718466100 | 10092914538  | 223422542  | 79470705  | 94371840    |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 491943818700 | 4494469354   | 1212937927 | 264329800 | 209715200   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 396113046200 | 28889839954  | 1212291528 | 200698411 | 209715200   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 157682908600 | 7658091422   | 223320860  | 79282167  | 209715200   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 497895633000 | 7261219320   | 1213065840 | 264464266 | 209715200   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 391192132200 | 24967924302  | 1212032045 | 200569375 | 209715200   |
+| All.Partial Twitter.Hermes Decode                   | 592403892    | 49061204     | 598391     | 7665      | 209715200   |
+| All.Partial Twitter.Aeson Lazy                      | 18096673200  | 1091647714   | 52866195   | 7542594   | 209715200   |
+| All.Partial Twitter.Aeson Strict                    | 15697815112  | 809305002    | 53548288   | 5871321   | 209715200   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) --> 
 
