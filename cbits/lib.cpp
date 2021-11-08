@@ -26,145 +26,133 @@ extern "C" {
     delete str;
   }
 
-  void get_iterator(
+  error_code get_iterator(
       ondemand::parser &parser, 
       padded_string &input, 
-      ondemand::document &out, 
-      error_code &error) {
-    parser.iterate(input).tie(out, error);
+      ondemand::document &out) {
+    return parser.iterate(input).get(out);
   }
 
-  void get_raw_json_str(
+  error_code get_document_value(
       ondemand::document &doc, 
-      std::string_view &out, 
-      error_code &error) {
-    doc.raw_json().tie(out, error);
+      ondemand::value &out) {
+    return doc.get_value().get(out);
   }
 
-  void get_document_value(
-      ondemand::document &doc, 
-      ondemand::value &out, 
-      error_code &error) {
-    doc.get_value().tie(out, error);
-  }
-
-  void at_pointer(
+  error_code at_pointer(
       const char *pointer,
       size_t len,
       ondemand::document &doc, 
-      ondemand::value &out, 
-      error_code &error) {
+      ondemand::value &out) {
     std::string_view pointerSv { pointer, len };
-    doc.at_pointer(pointerSv).tie(out, error);
+    return doc.at_pointer(pointerSv).get(out);
   }
 
-  void get_object_from_value(
+  error_code get_object_from_value(
       ondemand::value &val, 
-      ondemand::object &out, 
-      error_code &error) {
-    val.get_object().tie(out, error);
+      ondemand::object &out) {
+    return val.get_object().get(out);
   }
 
-  void get_object_iter(
-      ondemand::object &obj, 
-      ondemand::object_iterator &iterOut, 
-      error_code &error) {
-    obj.begin().tie(iterOut, error);
+  error_code get_object_iter_from_value(
+      ondemand::value &val, 
+      ondemand::object_iterator &iterOut) {
+    ondemand::object obj;
+    auto error = val.get_object().get(obj);
+    if (error != SUCCESS) { return error; }
+    return obj.begin().get(iterOut);
   }
 
   bool obj_iter_is_done(ondemand::object_iterator &obj) {
     return obj.operator==(obj);
   }
 
-  void obj_iter_get_current(
+  error_code obj_iter_get_current(
       ondemand::object_iterator &obj, 
       const char **key, 
       size_t *len,
-      ondemand::value &out, 
-      error_code &error) {
+      ondemand::value &out) {
     ondemand::field f;
-    obj.operator*().tie(f, error);
+    auto error = obj.operator*().get(f);
+    if (error != SUCCESS) { return error; }
     std::string_view uek;
-    f.unescaped_key().tie(uek, error);
+    error = f.unescaped_key().get(uek);
     *key = uek.data();
     *len = uek.length();
     out = f.value();
+    return error;
   }
 
   void obj_iter_move_next(ondemand::object_iterator &obj) {
     ++obj;
   }
 
-  void get_array_from_value(
+  error_code get_array_from_value(
       ondemand::value &val, 
-      ondemand::array &out, 
-      error_code &error) {
-    val.get_array().tie(out, error);
+      ondemand::array &out) {
+    return val.get_array().get(out);
   }
 
-  void get_array_iter(
-      ondemand::array &arr, 
-      ondemand::array_iterator &iterOut, 
-      error_code &error) {
-    arr.begin().tie(iterOut, error);
+  error_code get_array_iter_from_value(
+      ondemand::value &val, 
+      ondemand::array_iterator &iterOut) {
+    ondemand::array arr;
+    auto error = val.get_array().get(arr);
+    if (error != SUCCESS) { return error; }
+    return arr.begin().get(iterOut);
   }
 
   bool arr_iter_is_done(ondemand::array_iterator &arr) {
     return arr.operator==(arr);
   }
 
-  void arr_iter_get_current(
-      ondemand::array_iterator &arr, 
-      ondemand::value &out, 
-      error_code &error) {
-    arr.operator*().tie(out, error);
+  error_code arr_iter_get_current(ondemand::array_iterator &arr, ondemand::value &out) {
+    return arr.operator*().get(out);
   }
 
   void arr_iter_move_next(ondemand::array_iterator &arr) {
     ++arr;
   }
 
-  void find_field(
+  error_code find_field(
       ondemand::object &obj, 
       const char *key, 
       size_t len,
-      ondemand::value &out, 
-      error_code &error) {
+      ondemand::value &out) {
     std::string_view keySv { key, len };
-    obj.find_field(keySv).tie(out, error);
+    return obj.find_field(keySv).get(out);
   }
 
-  void find_field_unordered(
+  error_code find_field_unordered(
       ondemand::object &obj, 
       const char *key, 
       size_t len,
-      ondemand::value &out, 
-      error_code &error) {
+      ondemand::value &out) {
     std::string_view keySv { key, len };
-    obj.find_field_unordered(keySv).tie(out, error);
+    return obj.find_field_unordered(keySv).get(out);
   }
 
-  void get_int(ondemand::value &val, int64_t &out, error_code &error) {
-    val.get_int64().tie(out, error);
+  error_code get_int(ondemand::value &val, int64_t &out) {
+    return val.get_int64().get(out);
   }
 
-  void get_double(ondemand::value &val, double &out, error_code &error) {
-    val.get_double().tie(out, error);
+  error_code get_double(ondemand::value &val, double &out) {
+    return val.get_double().get(out);
   }
 
-  void get_bool(ondemand::value &val, bool &out, error_code &error) {
-    val.get_bool().tie(out, error);
+  error_code get_bool(ondemand::value &val, bool &out) {
+    return val.get_bool().get(out);
   }
 
-  void get_string(
+  error_code get_string(
       ondemand::value &val, 
       const char **out, 
-      size_t &len, 
-      error_code &error) {
+      size_t &len) {
     std::string_view buf;
-    val.get_string().tie(buf, error);
+    auto error = val.get_string().get(buf);
     *out = buf.data();
     len = buf.length();
+    return error;
   }
 
   void get_raw_json_token(
@@ -176,27 +164,14 @@ extern "C" {
     len = buf.length();
   }
 
-  ondemand::json_type get_json_type(ondemand::value &val) {
-    return val.type();
-  }
-
-  void reset_array(ondemand::array &arr) {
-    arr.reset();
-  }
-
-  void reset_object(ondemand::object &obj) {
-    obj.reset();
-  }
-
   bool is_null(ondemand::value &val) {
     return val.is_null();
   }
 
-  void current_location(
+  error_code current_location(
       ondemand::document &doc, 
-      const char **out, 
-      error_code &error) {
-    doc.current_location().tie(*out, error);
+      const char **out) {
+    return doc.current_location().get(*out);
   }
 
   void to_debug_string(ondemand::document &doc, char *out, size_t &len) {
@@ -205,9 +180,8 @@ extern "C" {
     len = str.length();
   }
 
-  const char *get_error_message(error_code &error) {
+  const char *get_error_message(error_code error) {
     return error_message(error);
   }
-
 
 }
