@@ -572,21 +572,21 @@ getText = fromCStringLen "text" parseText
 parseText :: CStringLen -> Decoder Text
 parseText cstr = do
   bs <- liftIO $ Unsafe.unsafePackCStringLen cstr
-  case A.parseOnly latinTextAtto bs of
+  case A.parseOnly asciiTextAtto bs of
     Left err       -> fail $ "Could not parse text: " <> err
     Right Nothing  -> pure $! T.decodeUtf8 bs
     Right (Just r) -> pure $! r
 {-# INLINE parseText #-}
 
-latinTextAtto :: A.Parser (Maybe Text)
-latinTextAtto = do
+asciiTextAtto :: A.Parser (Maybe Text)
+asciiTextAtto = do
   s <- A.takeWhile (\w -> w /= 92 && w >= 0x20 && w < 0x80)
   let txt = T.decodeLatin1 s
   mw <- A.peekWord8
   case mw of
     Nothing -> pure $ Just txt
     _       -> pure Nothing
-{-# INLINE latinTextAtto #-}
+{-# INLINE asciiTextAtto #-}
 
 getRawByteString :: Value -> Decoder BS.ByteString
 getRawByteString valPtr = withRunInIO $ \run ->
