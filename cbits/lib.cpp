@@ -26,20 +26,20 @@ extern "C" {
     delete str;
   }
 
-  error_code get_iterator(
+  const int get_iterator(
       ondemand::parser &parser, 
       padded_string &input, 
       ondemand::document &out) {
     return parser.iterate(input).get(out);
   }
 
-  error_code get_document_value(
+  const int get_document_value(
       ondemand::document &doc, 
       ondemand::value &out) {
     return doc.get_value().get(out);
   }
 
-  error_code at_pointer(
+  const int at_pointer(
       const char *pointer,
       size_t len,
       ondemand::document &doc, 
@@ -48,13 +48,13 @@ extern "C" {
     return doc.at_pointer(pointerSv).get(out);
   }
 
-  error_code get_object_from_value(
+  const int get_object_from_value(
       ondemand::value &val, 
       ondemand::object &out) {
     return val.get_object().get(out);
   }
 
-  error_code get_object_iter_from_value(
+  const int get_object_iter_from_value(
       ondemand::value &val, 
       ondemand::object_iterator &iterOut) {
     ondemand::object obj;
@@ -67,7 +67,7 @@ extern "C" {
     return obj.operator==(obj);
   }
 
-  error_code obj_iter_get_current(
+  const int obj_iter_get_current(
       ondemand::object_iterator &obj, 
       const char **key, 
       size_t *len,
@@ -87,13 +87,13 @@ extern "C" {
     ++obj;
   }
 
-  error_code get_array_from_value(
+  const int get_array_from_value(
       ondemand::value &val, 
       ondemand::array &out) {
     return val.get_array().get(out);
   }
 
-  error_code get_array_iter_from_value(
+  const int get_array_iter_from_value(
       ondemand::value &val, 
       ondemand::array_iterator &iterOut) {
     ondemand::array arr;
@@ -106,7 +106,7 @@ extern "C" {
     return arr.operator==(arr);
   }
 
-  error_code arr_iter_get_current(ondemand::array_iterator &arr, ondemand::value &out) {
+  const int arr_iter_get_current(ondemand::array_iterator &arr, ondemand::value &out) {
     return arr.operator*().get(out);
   }
 
@@ -114,7 +114,7 @@ extern "C" {
     ++arr;
   }
 
-  error_code find_field(
+  const int find_field(
       ondemand::object &obj, 
       const char *key, 
       size_t len,
@@ -123,7 +123,7 @@ extern "C" {
     return obj.find_field(keySv).get(out);
   }
 
-  error_code find_field_unordered(
+  const int find_field_unordered(
       ondemand::object &obj, 
       const char *key, 
       size_t len,
@@ -132,19 +132,19 @@ extern "C" {
     return obj.find_field_unordered(keySv).get(out);
   }
 
-  error_code get_int(ondemand::value &val, int64_t &out) {
+  const int get_int(ondemand::value &val, int64_t &out) {
     return val.get_int64().get(out);
   }
 
-  error_code get_double(ondemand::value &val, double &out) {
+  const int get_double(ondemand::value &val, double &out) {
     return val.get_double().get(out);
   }
 
-  error_code get_bool(ondemand::value &val, bool &out) {
+  const int get_bool(ondemand::value &val, bool &out) {
     return val.get_bool().get(out);
   }
 
-  error_code get_string(
+  const int get_string(
       ondemand::value &val, 
       const char **out, 
       size_t &len) {
@@ -168,7 +168,7 @@ extern "C" {
     return val.is_null();
   }
 
-  error_code current_location(
+  const int current_location(
       ondemand::document &doc, 
       const char **out) {
     return doc.current_location().get(*out);

@@ -292,7 +292,6 @@ handleErrorCode pre errInt = do
   else do
     errStr <- peekCString =<< liftIO (getErrorMessageImpl errInt)
     throwSIMD errCode $ pre <> T.pack errStr
-{-# INLINE handleErrorCode #-}
 
 data SIMDErrorCode =
     SUCCESS
