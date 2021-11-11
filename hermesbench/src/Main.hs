@@ -3,12 +3,14 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
 import           Control.DeepSeq (NFData)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Scientific (Scientific)
@@ -22,10 +24,21 @@ import           Test.Tasty.Bench
 
 import           Data.Hermes
 
+genArr :: Aeson.ToJSON v => Int -> v -> BS.ByteString
+genArr x v = "{\"_\": " <> BSL.toStrict (Aeson.encode (replicate x (replicate 3 v))) <> "}"
+
 main :: IO ()
 main = defaultMain
-  [ withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
-    bgroup "Small Map"
+  [ bgroup "1 Million 3-Arrays"
+      [ bench "Hermes [[Double]]" $ nf
+        (decodeEither (withObject $ atKey "_" (list (list double)))) $
+          genArr @Double 1000000 1.23456789
+      , bench "Aeson [[Double]]" $ nf
+        (Aeson.decodeStrict' @[[Double]]) $
+          genArr @Double 1000000 1.23456789
+      ]
+  , withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
+    bgroup "Small Object to Map"
       [ bench "Hermes Decode" $
           nfIO (decode (objectAsKeyValues pure int) =<< input)
       -- , bench "Hermes DecodeWith" $
@@ -110,34 +123,34 @@ data Person =
 decodePerson :: Value -> Decoder Person
 decodePerson = withObject $ \obj ->
   Person
-    <$> atOrderedKey "_id" text obj
-    <*> atOrderedKey "index" int obj
-    <*> atOrderedKey "guid" text obj
-    <*> atOrderedKey "isActive" bool obj
-    <*> atOrderedKey "balance" text obj
-    <*> atOrderedKey "picture" (nullable text) obj
-    <*> atOrderedKey "age" int obj
-    <*> atOrderedKey "eyeColor" text obj
-    <*> atOrderedKey "name" text obj
-    <*> atOrderedKey "gender" text obj
-    <*> atOrderedKey "company" text obj
-    <*> atOrderedKey "email" text obj
-    <*> atOrderedKey "phone" text obj
-    <*> atOrderedKey "address" text obj
-    <*> atOrderedKey "about" text obj
-    <*> atOrderedKey "registered" text obj
-    <*> atOrderedKey "latitude" scientific obj
-    <*> atOrderedKey "longitude" scientific obj
-    <*> atOrderedKey "tags" (list text) obj
-    <*> atOrderedKey "friends" (list decodeFriend) obj
-    <*> atOrderedKey "greeting" (nullable text) obj
-    <*> atOrderedKey "favoriteFruit" text obj
+    <$> atKey "_id" text obj
+    <*> atKey "index" int obj
+    <*> atKey "guid" text obj
+    <*> atKey "isActive" bool obj
+    <*> atKey "balance" text obj
+    <*> atKey "picture" (nullable text) obj
+    <*> atKey "age" int obj
+    <*> atKey "eyeColor" text obj
+    <*> atKey "name" text obj
+    <*> atKey "gender" text obj
+    <*> atKey "company" text obj
+    <*> atKey "email" text obj
+    <*> atKey "phone" text obj
+    <*> atKey "address" text obj
+    <*> atKey "about" text obj
+    <*> atKey "registered" text obj
+    <*> atKey "latitude" scientific obj
+    <*> atKey "longitude" scientific obj
+    <*> atKey "tags" (list text) obj
+    <*> atKey "friends" (list decodeFriend) obj
+    <*> atKey "greeting" (nullable text) obj
+    <*> atKey "favoriteFruit" text obj
 
 decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->
   Friend
-    <$> atOrderedKey "id" int obj
-    <*> atOrderedKey "name" text obj
+    <$> atKey "id" int obj
+    <*> atKey "name" text obj
 
 -- personDecoder :: Monad f => D.Decoder f Person
 -- personDecoder =
@@ -356,10 +369,10 @@ decodeStatus = withObject $ \obj -> do
 decodeUser :: Value -> Decoder User
 decodeUser = withObject $ \obj ->
   User
-    <$> atOrderedKey "screen_name" text obj
-    <*> atOrderedKey "location" text obj
-    <*> atOrderedKey "description" text obj
-    <*> atOrderedKey "url" (nullable text) obj
+    <$> atKey "screen_name" text obj
+    <*> atKey "location" text obj
+    <*> atKey "description" text obj
+    <*> atKey "url" (nullable text) obj
 
 -- twitterDecoder :: Monad f => D.Decoder f Twitter
 -- twitterDecoder =

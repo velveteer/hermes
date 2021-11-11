@@ -21,7 +21,7 @@ module Data.Hermes
   , decodeEither
   , withHermesEnv
   , withInputBuffer
-  , withDocument
+  , withDocumentValue
   -- * Object field accessors
   , Key
   , mkKey
@@ -32,7 +32,7 @@ module Data.Hermes
   , Pointer
   , mkPointer
   , atPointer
-    -- * Value decoders
+  -- * Value decoders
   , bool
   , char
   , double
@@ -51,6 +51,9 @@ module Data.Hermes
   , localTime
   , utcTime
   , zonedTime
+  -- * Faster primitive array decoders
+  , listOfDouble
+  , listOfInt
   -- * Environment creation
   , mkHermesEnv
   , mkHermesEnv_
@@ -75,10 +78,10 @@ module Data.Hermes
 
 import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData)
-import           Control.Monad ((>=>))
+import           Control.Monad ((>=>), void)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.Reader (MonadReader, asks, local)
 import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
+import           Control.Monad.Reader (MonadReader, asks, local)
 import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
 import qualified Data.Attoparsec.ByteString as A
 import qualified Data.Attoparsec.ByteString.Char8 as AC (scientific)
@@ -86,6 +89,7 @@ import qualified Data.Attoparsec.Text as AT
 import qualified Data.Attoparsec.Time as ATime
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
 import           Data.Maybe (fromMaybe)
@@ -101,7 +105,27 @@ import qualified Data.Time.LocalTime as Local
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
 import           UnliftIO.Exception (Exception, bracket, catch, mask_, throwIO, try)
-import           UnliftIO.Foreign hiding (allocaArray, withArray)
+import           UnliftIO.Foreign
+  ( CBool
+  , CInt
+  , CSize
+  , CString
+  , CStringLen
+  , ForeignPtr
+  , FunPtr
+  , Ptr
+  , alloca
+  , allocaBytes
+  , finalizeForeignPtr
+  , newForeignPtr
+  , peek
+  , peekArray
+  , peekCString
+  , peekCStringLen
+  , toBool
+  , withForeignPtr
+  )
+import qualified UnliftIO.Foreign as Foreign
 
 -- | Phantom type for a pointer to simdjson::ondemand::parser.
 data SIMDParser
@@ -141,11 +165,8 @@ foreign import ccall unsafe "&delete_input" deleteInputImpl
   :: FunPtr (Ptr PaddedString -> IO ())
 
 -- Document parsers
-foreign import ccall unsafe "get_iterator" getIterator
-  :: Parser -> InputBuffer -> Document -> IO CInt
-
 foreign import ccall unsafe "get_document_value" getDocumentValueImpl
-  :: Document -> Value -> IO CInt
+  :: Parser -> InputBuffer -> Document -> Value -> IO CInt
 
 foreign import ccall unsafe "at_pointer" atPointerImpl
   :: CString -> Int -> Document -> Value -> IO CInt
@@ -167,6 +188,18 @@ foreign import ccall unsafe "obj_iter_move_next" objectIterMoveNextImpl
 
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
   :: Value -> Array -> IO CInt
+
+foreign import ccall unsafe "generic_array" getArrayOfValuesImpl
+  :: Array -> Ptr Value -> IO CInt
+
+foreign import ccall unsafe "get_array_len_from_value" getArrayLenFromValueImpl
+  :: Value -> Array -> Ptr CSize -> IO CInt
+
+foreign import ccall unsafe "int_array" intArrayImpl
+  :: Array -> Ptr Int -> IO CInt
+
+foreign import ccall unsafe "double_array" doubleArrayImpl
+  :: Array -> Ptr Double -> IO CInt
 
 foreign import ccall unsafe "get_array_iter_from_value" getArrayIterFromValueImpl
   :: Value -> ArrayIter -> IO CInt
@@ -254,7 +287,6 @@ typePrefix typ = "Error while getting value of type " <> typ <> ". "
 
 buildHError :: Maybe SIMDErrorCode -> Text -> Decoder HError
 buildHError mErrCode msg = do
-  docFPtr <- asks hDocument
   pth <- asks hPath
   case mErrCode of
     Just c
@@ -272,7 +304,7 @@ buildHError mErrCode msg = do
       withRunInIO $ \run ->
       alloca $ \locStrPtr -> run $
       alloca $ \lenPtr ->
-      withDocumentPointer docFPtr $ \docPtr -> do
+      withDocumentPointer $ \docPtr -> do
         err <- liftIO $ currentLocationImpl docPtr locStrPtr
         let errCode = toEnum $ fromIntegral err
         if errCode == OUT_OF_BOUNDS
@@ -353,6 +385,7 @@ newtype InputBuffer = InputBuffer (Ptr PaddedString)
 
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
+  deriving newtype Foreign.Storable
 
 -- | A reference to an opaque simdjson::ondemand::object.
 newtype Object = Object (Ptr JSONObject)
@@ -380,32 +413,29 @@ newtype Pointer = Pointer Text
 mkPointer :: Text -> Pointer
 mkPointer = Pointer
 
-withParserPointer :: ForeignPtr SIMDParser -> (Parser -> Decoder a) -> Decoder a
-withParserPointer parserFPtr f =
-  withForeignPtr parserFPtr $ f . Parser
+withParserPointer :: (Parser -> Decoder a) -> Decoder a
+withParserPointer f =
+  asks hParser >>= \parserFPtr -> withForeignPtr parserFPtr $ f . Parser
 
-withDocumentPointer :: ForeignPtr SIMDDocument -> (Document -> Decoder a) -> Decoder a
-withDocumentPointer docFPtr f =
-  withForeignPtr docFPtr $ f . Document
+withDocumentPointer :: (Document -> Decoder a) -> Decoder a
+withDocumentPointer f =
+  asks hDocument >>= \docFPtr -> withForeignPtr docFPtr $ f . Document
 
-withDocument :: (Value -> Decoder a) -> InputBuffer -> Decoder a
-withDocument f inputPtr = allocaValue $ \valPtr -> do
-  docFPtr <- asks hDocument
-  parserFPtr <- asks hParser
-  withParserPointer parserFPtr $ \parserPtr ->
-    withDocumentPointer docFPtr $ \docPtr -> do
-      err <- liftIO $ getIterator parserPtr inputPtr docPtr
-      handleErrorCode "" err
-      err' <- liftIO $ getDocumentValueImpl docPtr valPtr
-      handleErrorCode "" err'
-      f valPtr
+withDocumentValue :: (Value -> Decoder a) -> InputBuffer -> Decoder a
+withDocumentValue f inputPtr =
+  allocaValue $ \valPtr ->
+  withParserPointer $ \parserPtr ->
+  withDocumentPointer $ \docPtr -> do
+    err <- liftIO $ getDocumentValueImpl parserPtr inputPtr docPtr valPtr
+    handleErrorCode "" err
+    f valPtr
 
 -- | Decode a value at the particular JSON pointer following RFC 6901.
 -- Be careful where you use this because it rewinds the document on each
 -- successive call.
 atPointer :: Pointer -> (Value -> Decoder a) -> Decoder a
-atPointer (Pointer jptr) f = asks hDocument >>= \docFPtr ->
-  withDocumentPointer docFPtr $ \docPtr ->
+atPointer (Pointer jptr) f =
+  withDocumentPointer $ \docPtr ->
   withRunInIO $ \run ->
   Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 jptr) $ \(cstr, len) -> run $
   allocaValue $ \vPtr -> withPath jptr $ do
@@ -426,6 +456,7 @@ withObjectIter f valPtr = allocaObjectIter $ \iterPtr -> do
   err <- liftIO $ getObjectIterFromValueImpl valPtr iterPtr
   handleErrorCode "" err
   f iterPtr
+{-# INLINE withObjectIter #-}
 
 -- | Execute a function on each Field in an ObjectIter and
 -- accumulate key-value tuples into a list.
@@ -437,7 +468,7 @@ iterateOverFields fk fv iterPtr = withRunInIO $ \runInIO ->
   go DList.empty keyPtr lenPtr valPtr
   where
     {-# INLINE go #-}
-    go !acc !keyPtr !lenPtr !valPtr = do
+    go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap toBool . liftIO $ objectIterIsDoneImpl iterPtr
       if not isOver
         then do
@@ -445,7 +476,7 @@ iterateOverFields fk fv iterPtr = withRunInIO $ \runInIO ->
           handleErrorCode "" err
           kLen <- fmap fromIntegral . liftIO $ peek lenPtr
           kStr <- liftIO $ peek keyPtr
-          keyTxt <- parseText (kStr, kLen)
+          keyTxt <- parseTextFromCStrLen (kStr, kLen)
           withPath (dot keyTxt) $ do
             k <- fk keyTxt
             v <- fv valPtr
@@ -536,6 +567,7 @@ parseScientific :: BS.ByteString -> Decoder Sci.Scientific
 parseScientific
   = either (\err -> fail $ "Failed to parse Scientific: " <> err) pure
   . A.parseOnly (AC.scientific <* A.endOfInput)
+  . BSC.strip
 {-# INLINE parseScientific #-}
 
 getBool :: Value -> Decoder Bool
@@ -550,8 +582,8 @@ getBool valPtr = withRunInIO $ \run ->
 withBool :: (Bool -> Decoder a) -> Value -> Decoder a
 withBool f = getBool >=> f
 
-fromCStringLen :: Text -> (CStringLen -> Decoder a) -> Value -> Decoder a
-fromCStringLen lbl f valPtr = withRunInIO $ \run ->
+withCStringLen :: Text -> (CStringLen -> Decoder a) -> Value -> Decoder a
+withCStringLen lbl f valPtr = withRunInIO $ \run ->
   alloca $ \strPtr ->
   alloca $ \lenPtr -> run $ do
     err <- liftIO $ getStringImpl valPtr strPtr lenPtr
@@ -559,24 +591,24 @@ fromCStringLen lbl f valPtr = withRunInIO $ \run ->
     len <- fmap fromIntegral . liftIO $ peek lenPtr
     str <- liftIO $ peek strPtr
     f (str, len)
-{-# INLINE fromCStringLen #-}
+{-# INLINE withCStringLen #-}
 
 getString :: Value -> Decoder String
-getString = fromCStringLen "string" (liftIO . peekCStringLen)
+getString = withCStringLen "string" (liftIO . peekCStringLen)
 {-# INLINE getString #-}
 
 getText :: Value -> Decoder Text
-getText = fromCStringLen "text" parseText
+getText = withCStringLen "text" parseTextFromCStrLen
 {-# INLINE getText #-}
 
-parseText :: CStringLen -> Decoder Text
-parseText cstr = do
+parseTextFromCStrLen :: CStringLen -> Decoder Text
+parseTextFromCStrLen cstr = do
   bs <- liftIO $ Unsafe.unsafePackCStringLen cstr
   case A.parseOnly asciiTextAtto bs of
     Left err       -> fail $ "Could not parse text: " <> err
     Right Nothing  -> pure $! T.decodeUtf8 bs
     Right (Just r) -> pure $! r
-{-# INLINE parseText #-}
+{-# INLINE parseTextFromCStrLen #-}
 
 asciiTextAtto :: A.Parser (Maybe Text)
 asciiTextAtto = do
@@ -624,6 +656,40 @@ withArray f val =
     handleErrorCode (typePrefix "array") err
     f arrPtr
 
+-- | Helper to work with an Array and its length parsed from a Value.
+withArrayLen :: ((Array, Int) -> Decoder a) -> Value -> Decoder a
+withArrayLen f val =
+  allocaArray $ \arrPtr ->
+  withRunInIO $ \run ->
+  alloca $ \outLen -> run $ do
+    err <- liftIO $ getArrayLenFromValueImpl val arrPtr outLen
+    handleErrorCode (typePrefix "array") err
+    len <- fmap fromIntegral . liftIO $ peek outLen
+    f (arrPtr, len)
+{-# INLINE withArrayLen #-}
+
+-- | Is way more efficient by looping in C++ instead of Haskell.
+listOfInt :: Value -> Decoder [Int]
+listOfInt =
+  withArrayLen $ \(arrPtr, len) ->
+  Foreign.allocaArray len $ \out -> do
+    err <- liftIO $ intArrayImpl arrPtr out
+    handleErrorCode "" err
+    liftIO $ peekArray len out
+{-# INLINE[2] listOfInt #-}
+{-# RULES "list int/listOfInt" list int = listOfInt #-}
+
+-- | Is way more efficient by looping in C++ instead of Haskell.
+listOfDouble :: Value -> Decoder [Double]
+listOfDouble =
+  withArrayLen $ \(arrPtr, len) ->
+  Foreign.allocaArray len $ \out -> do
+    err <- liftIO $ doubleArrayImpl arrPtr out
+    handleErrorCode "" err
+    liftIO $ peekArray len out
+{-# INLINE[2] listOfDouble #-}
+{-# RULES "list double/listOfDouble" list double = listOfDouble #-}
+
 -- | Helper to work with an ArrayIter started from a Value assumed to be an Array.
 withArrayIter :: (ArrayIter -> Decoder a) -> Value -> Decoder a
 withArrayIter f valPtr =
@@ -631,6 +697,7 @@ withArrayIter f valPtr =
     err <- liftIO $ getArrayIterFromValueImpl valPtr iterPtr
     handleErrorCode "" err
     f iterPtr
+{-# INLINE withArrayIter #-}
 
 -- | Execute a function on each Value in an ArrayIter and
 -- accumulate the results into a list.
@@ -639,7 +706,7 @@ iterateOverArray f iterPtr =
   allocaValue $ \valPtr -> go (0 :: Int) DList.empty valPtr
   where
     {-# INLINE go #-}
-    go !n !acc !valPtr = do
+    go !n !acc valPtr = do
       isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver
         then withPathIndex n $ do
@@ -650,6 +717,26 @@ iterateOverArray f iterPtr =
           go (n + 1) (acc <> DList.singleton result) valPtr
         else
           pure $ DList.toList acc
+
+arrayOf :: (Value -> Decoder a) -> Value -> Decoder [a]
+arrayOf f =
+  withArrayLen $ \(arrPtr, len) ->
+  Foreign.allocaArray len $ \out -> do
+    err <- liftIO $ getArrayOfValuesImpl arrPtr out
+    handleErrorCode "" err
+    vals <- liftIO $ peekArray len out
+    res <- go (0 :: Int) DList.empty vals
+    pure res
+  where
+    go !n !acc (val@(Value x):xs) = do
+      res <- withPathIndex n $ f val
+      void . liftIO $ Foreign.free x
+      go (n + 1) (acc <> DList.singleton res) xs
+    go _ acc [] =
+      pure $ DList.toList acc
+{-# INLINE[2] arrayOf #-}
+{-# RULES "list (listOfInt)/arrayOf (listOfInt)" list (listOfInt) = arrayOf (listOfInt) #-}
+{-# RULES "list (listOfDouble)/arrayOf (listOfDouble)" list (listOfDouble) = arrayOf (listOfDouble) #-}
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
@@ -669,6 +756,7 @@ atOrderedKey (Key key) parser obj = withField parser obj key
 -- | Parse a homogenous JSON array into a Haskell list.
 list :: (Value -> Decoder a) -> Value -> Decoder [a]
 list f = withArrayIter $ iterateOverArray f
+{-# INLINE[2] list #-}
 
 -- | Parse an object into a homogenous list of key-value tuples.
 objectAsKeyValues
@@ -708,17 +796,19 @@ string = getString
 text :: Value -> Decoder Text
 text = getText
 
--- | Parse a JSON number into an unsigned Haskell Int.
-int :: Value -> Decoder Int
-int = getInt
-
 -- | Parse a JSON boolean into a Haskell Bool.
 bool :: Value -> Decoder Bool
 bool = getBool
 
+-- | Parse a JSON number into an unsigned Haskell Int.
+int :: Value -> Decoder Int
+int = getInt
+{-# INLINE[2] int #-}
+
 -- | Parse a JSON number into a Haskell Double.
 double :: Value -> Decoder Double
 double = getDouble
+{-# INLINE[2] double #-}
 
 -- | Parse a Scientific from a Value.
 scientific :: Value -> Decoder Sci.Scientific
@@ -878,7 +968,7 @@ decode :: (Value -> Decoder a) -> ByteString -> IO a
 decode d bs =
   withHermesEnv $ \hEnv ->
     withInputBuffer bs $ \input ->
-      flip runReaderT hEnv . runDecoder $ withDocument d input
+      flip runReaderT hEnv . runDecoder $ withDocumentValue d input
 
 -- | Helper that wraps `decode` and catches any IO exceptions before converting IO to Either.
 decodeEither :: (Value -> Decoder a) -> ByteString -> Either HermesException a

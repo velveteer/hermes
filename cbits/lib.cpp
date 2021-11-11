@@ -1,8 +1,11 @@
 #include "./simdjson/simdjson.h"
 using namespace simdjson;
 extern "C" {
-
   ondemand::parser *parser_init(size_t max_cap) {
+    /* auto my_implementation = available_implementations["haswell"]; */
+    /* if(! my_implementation) { exit(1); } */
+    /* if(! my_implementation->supported_by_runtime_system()) { exit(1); } */
+    /* active_implementation = my_implementation; */
     return new ondemand::parser{max_cap};
   }
 
@@ -26,16 +29,13 @@ extern "C" {
     delete str;
   }
 
-  error_code get_iterator(
+  error_code get_document_value(
       ondemand::parser &parser, 
       padded_string &input, 
-      ondemand::document &out) {
-    return parser.iterate(input).get(out);
-  }
-
-  error_code get_document_value(
       ondemand::document &doc, 
       ondemand::value &out) {
+    auto error = parser.iterate(input).get(doc);
+    if (error != SUCCESS) { return error; }
     return doc.get_value().get(out);
   }
 
@@ -91,6 +91,44 @@ extern "C" {
       ondemand::value &val, 
       ondemand::array &out) {
     return val.get_array().get(out);
+  }
+
+  error_code get_array_len_from_value(
+      ondemand::value &val, 
+      ondemand::array &out,
+      size_t &len) {
+    auto error = val.get_array().get(out);
+    if (error) { return error; }
+    return out.count_elements().get(len);
+  }
+
+  error_code int_array(ondemand::array &arr, int64_t out[]) {
+    for(auto x : arr) {
+      auto error = x.get_int64().get(*out);
+      if (error) { return error; }
+      ++out;
+    }
+    return SUCCESS;
+  }
+
+  error_code double_array(ondemand::array &arr, double out[]) {
+    for(auto x : arr) {
+      auto error = x.get_double().get(*out);
+      if (error) { return error; }
+      ++out;
+    }
+    return SUCCESS;
+  }
+
+  error_code generic_array(ondemand::array &arr, ondemand::value *out[]) {
+    for(auto x : arr) {
+      ondemand::value *val = new ondemand::value{};
+      auto error = x.get(*val);
+      if (error) { return error; }
+      *out = val;
+      ++out;
+    }
+    return SUCCESS;
   }
 
   error_code get_array_iter_from_value(
