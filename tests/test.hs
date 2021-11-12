@@ -80,6 +80,7 @@ data Person =
     , longitude     :: Double
     , tags          :: [Text]
     , friends       :: [Friend]
+    , doubles       :: [[Double]]
     , greeting      :: Maybe Text
     , favoriteFruit :: Text
     , employer      :: Employer
@@ -102,6 +103,7 @@ data PersonOptional =
     , longitude     :: Maybe Double
     , tags          :: Maybe [Text]
     , friends       :: Maybe [Friend]
+    , doubles       :: Maybe [[Double]]
     , greeting      :: Maybe (Maybe Text)
     , favoriteFruit :: Maybe Text
     , employer      :: Maybe Employer
@@ -146,6 +148,7 @@ decodePerson = withObject $ \obj ->
     <*> atKey "longitude" double obj
     <*> atKey "tags" (list text) obj
     <*> atKey "friends" (list decodeFriend) obj
+    <*> atKey "doubles" (list (list double)) obj
     <*> atKey "greeting" (nullable text) obj
     <*> atKey "favoriteFruit" text obj
     <*> atKey "employer" decodeEmployer obj
@@ -167,6 +170,7 @@ decodePersonOptional = withObject $ \obj ->
     <*> atOptionalKey "longitude" double obj
     <*> atOptionalKey "tags" (list text) obj
     <*> atOptionalKey "friends" (list decodeFriend) obj
+    <*> atOptionalKey "doubles" (list (list double)) obj
     <*> atOptionalKey "greeting" (nullable text) obj
     <*> atOptionalKey "favoriteFruit" text obj
     <*> atOptionalKey "employer" decodeEmployer obj
@@ -189,10 +193,11 @@ genPerson = Person
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.int (Range.linear 0 100)
-  <*> Gen.double (Range.constant 0 10000000000000000)
-  <*> Gen.double (Range.constant 0 10000000000000000)
+  <*> genDouble
+  <*> genDouble
   <*> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.list (Range.linear 0 100) genFriend
+  <*> Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble)
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> genEmployer
@@ -210,10 +215,11 @@ genPersonOptional = PersonOptional
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.maybe (Gen.int (Range.linear 0 100))
-  <*> Gen.maybe (Gen.double (Range.constant 0 10000000000000000))
-  <*> Gen.maybe (Gen.double (Range.constant 0 10000000000000000))
+  <*> Gen.maybe genDouble
+  <*> Gen.maybe genDouble
   <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.maybe (Gen.list (Range.linear 0 100) genFriend)
+  <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble))
   <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe genEmployer
@@ -256,11 +262,12 @@ timeOfDayGenerator =
   fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000)
     $ Gen.realFrac_ (Range.constant 0 86400)
 
+genDouble :: Gen Double
+genDouble =
+  Gen.double $ Range.linearFracFrom
+    0
+    (-1000000000000000000000000)
+    1000000000000000000000000
+
 genScientific :: Gen Scientific
-genScientific =
-  fmap Sci.fromFloatDigits $
-    Gen.double $
-      Range.linearFracFrom
-        0
-        (-1000000000000000000000000)
-        1000000000000000000000000
+genScientific = fmap Sci.fromFloatDigits $ genDouble

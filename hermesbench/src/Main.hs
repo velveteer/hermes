@@ -31,7 +31,7 @@ main :: IO ()
 main = defaultMain
   [ bgroup "1 Million 3-Arrays"
       [ bench "Hermes [[Double]]" $ nf
-        (decodeEither (withObject $ atKey "_" (list (list double)))) $
+        (decodeEither (withObject $ atKey "_" (list $ list double))) $
           genArr @Double 1000000 1.23456789
       , bench "Aeson [[Double]]" $ nf
         (Aeson.decodeStrict' @[[Double]]) $

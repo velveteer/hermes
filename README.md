@@ -70,20 +70,20 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 115272713100  | 1934713990   | 47687965   | 85877840  | 182452224   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1884411547200 | 76507939704  | 9240069902 | 919273724 | 817889280   |
-| All.Small Object to Map.Hermes Decode               | 1470661       | 93410        | 4267       | 142       | 817889280   |
-| All.Small Object to Map.Aeson Lazy                  | 3128079       | 267122       | 20403      | 1         | 817889280   |
-| All.Small Object to Map.Aeson Strict                | 2989167       | 282056       | 20379      | 1         | 817889280   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 108364110600  | 1952520246   | 149295592  | 80384930  | 817889280   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 449065829900  | 5171074008   | 1212937799 | 264265807 | 817889280   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 360223948400  | 33663990878  | 1212295142 | 200635670 | 817889280   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 117411776400  | 3205635102   | 150479932  | 77475181  | 817889280   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 447445172900  | 7760404948   | 1213065712 | 264399355 | 817889280   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 359379863800  | 34180644224  | 1212031788 | 200507442 | 817889280   |
-| All.Partial Twitter.Hermes Decode                   | 467627971     | 35702604     | 384206     | 4772      | 817889280   |
-| All.Partial Twitter.Aeson Lazy                      | 17025322000   | 1266640830   | 52866100   | 7546410   | 817889280   |
-| All.Partial Twitter.Aeson Strict                    | 14314590400   | 1096781504   | 53294115   | 5960806   | 817889280   |
+| All.1 Million 3-Arrays.Hermes [[Double]]            | 527544953100  | 25889806384  | 567060781  | 555780966 | 548405248   |
+| All.1 Million 3-Arrays.Aeson [[Double]]             | 1974288189800 | 230180518292 | 9240070266 | 919275248 | 817889280   |
+| All.Small Object to Map.Hermes Decode               | 1442395       | 87646        | 4267       | 142       | 817889280   |
+| All.Small Object to Map.Aeson Lazy                  | 3039015       | 264080       | 20429      | 1         | 817889280   |
+| All.Small Object to Map.Aeson Strict                | 2984872       | 195272       | 20379      | 1         | 817889280   |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 108534298300  | 2071130684   | 149299759  | 80391524  | 817889280   |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 458802868400  | 43024912018  | 1212519095 | 268053927 | 817889280   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 360200644000  | 34212211242  | 1212278401 | 200623113 | 817889280   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 117247623800  | 2828144788   | 150493856  | 77490574  | 817889280   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 448589908200  | 8940134736   | 1213065712 | 264398784 | 817889280   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 358849118600  | 31346210716  | 1212031724 | 200506847 | 817889280   |
+| All.Partial Twitter.Hermes Decode                   | 457497967     | 23579286     | 384206     | 4772      | 817889280   |
+| All.Partial Twitter.Aeson Lazy                      | 17005647650   | 1112043338   | 52866100   | 7545951   | 817889280   |
+| All.Partial Twitter.Aeson Strict                    | 14157931700   | 443648854    | 53497741   | 5922051   | 817889280   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) --> 
 
@@ -94,20 +94,20 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES_THREADED) -->
 | Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 133529642300  | 1543690100   | 47689212   | 85898678  | 182452224   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1993128014800 | 101782391362 | 9240070954 | 919907507 | 817889280   |
-| All.Small Object to Map.Hermes Decode               | 1559621       | 91026        | 4267       | 142       | 817889280   |
-| All.Small Object to Map.Aeson Lazy                  | 3164590       | 199224       | 20404      | 2         | 817889280   |
-| All.Small Object to Map.Aeson Strict                | 3157716       | 221914       | 20380      | 2         | 817889280   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 113434202000  | 3166806676   | 149303764  | 80419410  | 817889280   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 470528927800  | 45210622850  | 1212510930 | 268160082 | 817889280   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 367944270800  | 34719465052  | 1212276869 | 200732760 | 817889280   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 121070609200  | 2692997734   | 150494294  | 77517345  | 817889280   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 470688174400  | 42787911172  | 1212646422 | 268240937 | 817889280   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 368101410200  | 34196217096  | 1212032364 | 200616815 | 817889280   |
-| All.Partial Twitter.Hermes Decode                   | 470226437     | 26867648     | 384221     | 4818      | 817889280   |
-| All.Partial Twitter.Aeson Lazy                      | 17595421200   | 750576912    | 52867027   | 7573335   | 817889280   |
-| All.Partial Twitter.Aeson Strict                    | 14666992850   | 1014345056   | 53294973   | 5977160   | 817889280   |
+| All.1 Million 3-Arrays.Hermes [[Double]]            | 555357333900  | 28776487856  | 567062173  | 555849004 | 548405248   |
+| All.1 Million 3-Arrays.Aeson [[Double]]             | 1957512648400 | 131570909722 | 9240070858 | 919906911 | 817889280   |
+| All.Small Object to Map.Hermes Decode               | 1512607       | 32124        | 4326       | 144       | 817889280   |
+| All.Small Object to Map.Aeson Lazy                  | 3039437       | 177426       | 20404      | 2         | 817889280   |
+| All.Small Object to Map.Aeson Strict                | 3030979       | 197548       | 20380      | 2         | 817889280   |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 111603983100  | 1623576758   | 149296747  | 80406628  | 817889280   |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 456329749600  | 8845630900   | 1212937927 | 264372762 | 817889280   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 365205700000  | 23712982132  | 1212295637 | 200743515 | 817889280   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 121036923800  | 3948733262   | 150494052  | 77517151  | 817889280   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 457424519200  | 12298131932  | 1213065840 | 264506291 | 817889280   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 365064049000  | 26238661162  | 1212032196 | 200615649 | 817889280   |
+| All.Partial Twitter.Hermes Decode                   | 464838462     | 21144978     | 384231     | 4863      | 817889280   |
+| All.Partial Twitter.Aeson Lazy                      | 17261342900   | 1282477558   | 52866228   | 7572831   | 817889280   |
+| All.Partial Twitter.Aeson Strict                    | 14322117325   | 550258986    | 53497869   | 5938597   | 817889280   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) --> 
 

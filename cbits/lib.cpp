@@ -120,17 +120,6 @@ extern "C" {
     return SUCCESS;
   }
 
-  error_code generic_array(ondemand::array &arr, ondemand::value *out[]) {
-    for(auto x : arr) {
-      ondemand::value *val = new ondemand::value{};
-      auto error = x.get(*val);
-      if (error) { return error; }
-      *out = val;
-      ++out;
-    }
-    return SUCCESS;
-  }
-
   error_code get_array_iter_from_value(
       ondemand::value &val, 
       ondemand::array_iterator &iterOut) {

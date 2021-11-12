@@ -78,7 +78,7 @@ module Data.Hermes
 
 import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData)
-import           Control.Monad ((>=>), void)
+import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import           Control.Monad.Reader (MonadReader, asks, local)
@@ -188,9 +188,6 @@ foreign import ccall unsafe "obj_iter_move_next" objectIterMoveNextImpl
 
 foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
   :: Value -> Array -> IO CInt
-
-foreign import ccall unsafe "generic_array" getArrayOfValuesImpl
-  :: Array -> Ptr Value -> IO CInt
 
 foreign import ccall unsafe "get_array_len_from_value" getArrayLenFromValueImpl
   :: Value -> Array -> Ptr CSize -> IO CInt
@@ -385,7 +382,6 @@ newtype InputBuffer = InputBuffer (Ptr PaddedString)
 
 -- | A reference to an opaque simdjson::ondemand::value.
 newtype Value = Value (Ptr JSONValue)
-  deriving newtype Foreign.Storable
 
 -- | A reference to an opaque simdjson::ondemand::object.
 newtype Object = Object (Ptr JSONObject)
@@ -668,26 +664,24 @@ withArrayLen f val =
     f (arrPtr, len)
 {-# INLINE withArrayLen #-}
 
--- | Is way more efficient by looping in C++ instead of Haskell.
+-- | Is more efficient by looping in C++ instead of Haskell.
 listOfInt :: Value -> Decoder [Int]
 listOfInt =
   withArrayLen $ \(arrPtr, len) ->
   Foreign.allocaArray len $ \out -> do
     err <- liftIO $ intArrayImpl arrPtr out
-    handleErrorCode "" err
+    handleErrorCode "Error decoding array of ints." err
     liftIO $ peekArray len out
-{-# INLINE[2] listOfInt #-}
 {-# RULES "list int/listOfInt" list int = listOfInt #-}
 
--- | Is way more efficient by looping in C++ instead of Haskell.
+-- | Is more efficient by looping in C++ instead of Haskell.
 listOfDouble :: Value -> Decoder [Double]
 listOfDouble =
   withArrayLen $ \(arrPtr, len) ->
   Foreign.allocaArray len $ \out -> do
     err <- liftIO $ doubleArrayImpl arrPtr out
-    handleErrorCode "" err
+    handleErrorCode "Error decoding array of doubles." err
     liftIO $ peekArray len out
-{-# INLINE[2] listOfDouble #-}
 {-# RULES "list double/listOfDouble" list double = listOfDouble #-}
 
 -- | Helper to work with an ArrayIter started from a Value assumed to be an Array.
@@ -717,26 +711,6 @@ iterateOverArray f iterPtr =
           go (n + 1) (acc <> DList.singleton result) valPtr
         else
           pure $ DList.toList acc
-
-arrayOf :: (Value -> Decoder a) -> Value -> Decoder [a]
-arrayOf f =
-  withArrayLen $ \(arrPtr, len) ->
-  Foreign.allocaArray len $ \out -> do
-    err <- liftIO $ getArrayOfValuesImpl arrPtr out
-    handleErrorCode "" err
-    vals <- liftIO $ peekArray len out
-    res <- go (0 :: Int) DList.empty vals
-    pure res
-  where
-    go !n !acc (val@(Value x):xs) = do
-      res <- withPathIndex n $ f val
-      void . liftIO $ Foreign.free x
-      go (n + 1) (acc <> DList.singleton res) xs
-    go _ acc [] =
-      pure $ DList.toList acc
-{-# INLINE[2] arrayOf #-}
-{-# RULES "list (listOfInt)/arrayOf (listOfInt)" list (listOfInt) = arrayOf (listOfInt) #-}
-{-# RULES "list (listOfDouble)/arrayOf (listOfDouble)" list (listOfDouble) = arrayOf (listOfDouble) #-}
 
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
