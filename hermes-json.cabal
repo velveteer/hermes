@@ -119,6 +119,7 @@ test-suite hermes-test
     text,
     hedgehog       >= 1.0.5 && < 1.1,
     tasty          >= 1.4.2 && < 1.5,
+    tasty-hunit    >= 0.10.0 && < 0.11,
     tasty-hedgehog >= 1.1.0 && < 1.2,
     time
 

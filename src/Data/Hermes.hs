@@ -36,6 +36,7 @@ module Data.Hermes
   , bool
   , char
   , double
+  , doubleNonFinite
   , int
   , scientific
   , string
@@ -554,6 +555,15 @@ getDouble valPtr = withRunInIO $ \run ->
     liftIO $ peek ptr
 {-# INLINE getDouble #-}
 
+getDoubleNonFinite :: Value -> Decoder Double
+getDoubleNonFinite = withRawByteString $ \bs ->
+  case BSC.strip bs of
+    "\"+inf\"" -> pure $ 1/0
+    "\"-inf\"" -> pure $ (-1)/0
+    "null"     -> pure $ 0/0
+    _          -> Sci.toRealFloat <$> parseScientific bs
+{-# INLINE getDoubleNonFinite #-}
+
 -- | Helper to work with a Double parsed from a Value.
 withDouble :: (Double -> Decoder a) -> Value -> Decoder a
 withDouble f = getDouble >=> f
@@ -783,6 +793,13 @@ int = getInt
 double :: Value -> Decoder Double
 double = getDouble
 {-# INLINE[2] double #-}
+
+-- | Parse an IEEE 754 floating point number into a Haskell Double.
+-- This follows the encoding convention used in the aeson library.
+-- If you do not need to handle non-finite floating point values
+-- then use `double` instead, it has better performance.
+doubleNonFinite :: Value -> Decoder Double
+doubleNonFinite = getDoubleNonFinite
 
 -- | Parse a Scientific from a Value.
 scientific :: Value -> Decoder Sci.Scientific

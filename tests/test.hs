@@ -5,8 +5,10 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 import qualified Data.Aeson as A
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -19,6 +21,7 @@ import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import           Test.Tasty
+import           Test.Tasty.HUnit
 import           Test.Tasty.Hedgehog
 
 import           Data.Hermes
@@ -27,10 +30,13 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [properties]
+tests = testGroup "Tests" [properties, units]
 
 properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors]
+
+units :: TestTree
+units = testGroup "Units" [aesonIEEE754]
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
@@ -66,6 +72,30 @@ rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
     let d1 = decodeEither decodePerson p
         d2 = decodeEither decodePerson p
     d1 === d2
+
+makeDummyObj :: A.ToJSON value => value -> BS.ByteString
+makeDummyObj v = "{ \"_\": " <> (BSL.toStrict . A.encode $ v) <> "}"
+
+dummyDecoder :: (Value -> Decoder a) -> Value -> Decoder a
+dummyDecoder d = withObject $ atKey "_" d
+
+aesonIEEE754 :: TestTree
+aesonIEEE754 = testGroup "Decodes IEEE 754 Floating Point"
+  [ testCase "Infinity" $
+      decodeEither (dummyDecoder doubleNonFinite) (makeDummyObj @Double (1/0))
+        @?= (Right (1/0))
+  , testCase "-Infinity" $
+      decodeEither (dummyDecoder doubleNonFinite) (makeDummyObj @Double ((-1)/0))
+        @?= (Right ((-1)/0))
+  , testCase "NaN" $
+      fmap isNaN
+        (decodeEither (dummyDecoder doubleNonFinite) (makeDummyObj @Double (0/0)))
+        @?= (Right True)
+  , testCase "null" $
+      fmap isNaN
+        (decodeEither (dummyDecoder doubleNonFinite) (makeDummyObj @(Maybe Double) Nothing))
+        @?= (Right True)
+  ]
 
 data Person =
   Person
