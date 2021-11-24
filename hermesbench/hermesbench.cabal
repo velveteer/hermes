@@ -24,7 +24,7 @@ benchmark bench
     hermes-json
   default-extensions: OverloadedStrings
   default-language:   Haskell2010
-  ghc-options:        -Wall -O2 -with-rtsopts=-A64m
+  ghc-options:        -Wall -O2 
   hs-source-dirs:     src
   main-is:            Main.hs
   type:               exitcode-stdio-1.0

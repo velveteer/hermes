@@ -339,8 +339,8 @@ data Twitter =
 
 data Status =
   Status
-    { user              :: User
-    , metadata          :: Map Text Text
+    { user     :: User
+    , metadata :: Map Text Text
     }
     deriving stock (Show, Generic)
     deriving anyclass (NFData, Aeson.FromJSON)
