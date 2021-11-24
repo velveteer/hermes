@@ -18,6 +18,7 @@ extra-source-files:
   , cbits/simdjson/LICENSE
   , cbits/lib.cpp
   , CHANGELOG.md
+  , README.md
 tested-with: 
   , GHC == 8.10.7
   , GHC == 9.0.1
