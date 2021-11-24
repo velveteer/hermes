@@ -14,6 +14,7 @@ import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import qualified Data.Time as Time
+import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
@@ -30,22 +31,49 @@ tests :: TestTree
 tests = testGroup "Tests" [properties]
 
 properties :: TestTree
-properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors]
+properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
+
+genPeano :: MonadGen m => m Peano
+genPeano = Peano <$> Gen.word16 Range.linearBounded
+
+rtRecursiveDataType :: TestTree
+rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
+  property $ do
+    t <- forAll genPeano
+    dt <- roundtrip decodePeano t
+    t === dt
+
+roundtrip :: A.ToJSON a => (Value -> Decoder a) -> a -> PropertyT IO a
+roundtrip decoder =
+  evalIO . decode decoder . BSL.toStrict . A.encode
+
+newtype Peano = Peano Word16
+  deriving (Eq, Show)
+
+instance A.ToJSON Peano where
+  toJSON (Peano 0) = A.object []
+  toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
+
+decodePeano :: Value -> Decoder Peano
+decodePeano = withObject $ \obj -> do
+  mPeano <- atOptionalKey "suc" decodePeano obj
+  pure $
+    case mPeano of
+      Just (Peano subTree) -> Peano $ 1 + subTree
+      Nothing -> Peano 0
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
   withTests 1000 . property $ do
     p <- forAll genPerson
-    encoded <- pure . BSL.toStrict . A.encode $ p
-    dp <- evalIO $ decode decodePerson encoded
+    dp <- roundtrip decodePerson p
     p === dp
 
 rtPropOptional :: TestTree
 rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
   withTests 1000 . property $ do
     p <- forAll genPersonOptional
-    encoded <- pure . BSL.toStrict . A.encode $ p
-    dp <- evalIO $ decode decodePersonOptional encoded
+    dp <- roundtrip decodePersonOptional p
     p === dp
 
 rtErrors :: TestTree
