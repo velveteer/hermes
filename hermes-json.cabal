@@ -47,6 +47,16 @@ library
     OverloadedStrings
   exposed-modules: 
     Data.Hermes
+  other-modules: 
+    Data.Hermes.Decoder
+    Data.Hermes.Decoder.Path
+    Data.Hermes.Decoder.Time
+    Data.Hermes.Decoder.Types
+    Data.Hermes.Decoder.Value
+    Data.Hermes.SIMDJSON
+    Data.Hermes.SIMDJSON.Bindings
+    Data.Hermes.SIMDJSON.Types
+    Data.Hermes.SIMDJSON.Wrapper
   build-depends:   
     attoparsec         >= 0.13.1 && < 0.15,
     attoparsec-iso8601 >= 1.0.2.0 && < 1.0.3.0,

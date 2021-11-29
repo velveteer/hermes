@@ -45,7 +45,7 @@ rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
 
 roundtrip :: A.ToJSON a => (Value -> Decoder a) -> a -> PropertyT IO a
 roundtrip decoder =
-  evalIO . decode decoder . BSL.toStrict . A.encode
+  either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
 
 newtype Peano = Peano Word16
   deriving (Eq, Show)
@@ -56,7 +56,7 @@ instance A.ToJSON Peano where
 
 decodePeano :: Value -> Decoder Peano
 decodePeano = withObject $ \obj -> do
-  mPeano <- atOptionalKey "suc" decodePeano obj
+  mPeano <- atKeyOptional "suc" decodePeano obj
   pure $
     case mPeano of
       Just (Peano subTree) -> Peano $ 1 + subTree
@@ -187,24 +187,24 @@ decodePerson = withObject $ \obj ->
 decodePersonOptional :: Value -> Decoder PersonOptional
 decodePersonOptional = withObject $ \obj ->
   PersonOptional
-    <$> atOptionalKey "_id" text obj
-    <*> atOptionalKey "index" int obj
-    <*> atOptionalKey "guid" text obj
-    <*> atOptionalKey "isActive" bool obj
-    <*> atOptionalKey "balance" text obj
-    <*> atOptionalKey "picture" (nullable text) obj
-    <*> atOptionalKey "age" int obj
-    <*> atOptionalKey "latitude" double obj
-    <*> atOptionalKey "longitude" double obj
-    <*> atOptionalKey "tags" (list text) obj
-    <*> atOptionalKey "friends" (list decodeFriend) obj
-    <*> atOptionalKey "doubles" (list (list double)) obj
-    <*> atOptionalKey "greeting" (nullable text) obj
-    <*> atOptionalKey "favoriteFruit" text obj
-    <*> atOptionalKey "employer" decodeEmployer obj
-    <*> (fmap Map.fromList <$> atOptionalKey "mapOfInts"
+    <$> atKeyOptional "_id" text obj
+    <*> atKeyOptional "index" int obj
+    <*> atKeyOptional "guid" text obj
+    <*> atKeyOptional "isActive" bool obj
+    <*> atKeyOptional "balance" text obj
+    <*> atKeyOptional "picture" (nullable text) obj
+    <*> atKeyOptional "age" int obj
+    <*> atKeyOptional "latitude" double obj
+    <*> atKeyOptional "longitude" double obj
+    <*> atKeyOptional "tags" (list text) obj
+    <*> atKeyOptional "friends" (list decodeFriend) obj
+    <*> atKeyOptional "doubles" (list (list double)) obj
+    <*> atKeyOptional "greeting" (nullable text) obj
+    <*> atKeyOptional "favoriteFruit" text obj
+    <*> atKeyOptional "employer" decodeEmployer obj
+    <*> (fmap Map.fromList <$> atKeyOptional "mapOfInts"
           (objectAsKeyValues (pure . KeyType) int) obj)
-    <*> atOptionalKey "utcTimeField" utcTime obj
+    <*> atKeyOptional "utcTimeField" utcTime obj
 
 decodeFriend :: Value -> Decoder Friend
 decodeFriend = withObject $ \obj ->

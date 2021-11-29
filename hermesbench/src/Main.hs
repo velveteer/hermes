@@ -40,7 +40,7 @@ main = defaultMain
   , withResource (BS.readFile "json/small_map.json") (const $ pure ()) $ \input ->
     bgroup "Small Object to Map"
       [ bench "Hermes Decode" $
-          nfIO (decode (objectAsKeyValues pure int) =<< input)
+          nfIO (decodeEither (objectAsKeyValues pure int) <$> input)
       -- , bench "Hermes DecodeWith" $
       --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (objectAsKeyValues pure int)})
       , bench "Aeson Lazy" $
@@ -54,7 +54,7 @@ main = defaultMain
     bgroup "Full Persons Array"
     [ bgroup "Ordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (decode (list decodePerson) =<< input)
+          nfIO (decodeEither (list decodePerson) <$> input)
       -- , bench "Hermes DecodeWith" $
       --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePerson)})
       , bench "Aeson Lazy" $
@@ -66,7 +66,7 @@ main = defaultMain
       ]
     , bgroup "Unordered Keys"
       [ bench "Hermes Decode" $
-          nfIO (decode (list decodePersonUnordered) =<< input)
+          nfIO (decodeEither (list decodePersonUnordered) <$> input)
       -- , bench "Hermes DecodeWith" $
       --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs (list decodePersonUnordered)})
       , bench "Aeson Lazy" $
@@ -80,7 +80,7 @@ main = defaultMain
   , withResource (BS.readFile "json/twitter100.json") (const $ pure ()) $ \input ->
     bgroup "Partial Twitter"
     [ bench "Hermes Decode" $
-        nfIO (decode decodeTwitter =<< input)
+        nfIO (decodeEither decodeTwitter <$> input)
     -- , bench "Hermes DecodeWith" $
     --     nfIO (do { env' <- envIO; bs <- input; decodeWith env' bs decodeTwitter})
     , bench "Aeson Lazy" $
