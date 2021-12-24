@@ -1,5 +1,5 @@
 <p align="center">
-<img src="./wings.svg" height=60 width=100 />
+<img src="https://raw.githubusercontent.com/velveteer/hermes/master/wings.svg" height=60 width=100 />
 </p>
 <h1 align="center">hermes</h1>
 <p align="center">
@@ -87,7 +87,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) --> 
 
-![](./hermesbench/bench.svg)
+![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench.svg)
 
 #### Threaded runtime
 
@@ -111,7 +111,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) --> 
 
-![](./hermesbench/bench_threaded.svg)
+![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench_threaded.svg)
 
 ## Performance Tips
 
@@ -123,8 +123,6 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 ## Limitations
 
 Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it. 
-
-Further work is coming to wrap the `simdjson::dom` API, which should allow walking the DOM in any order you want, but at the expense of parsing the entire document into a DOM. 
 
 Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and basic well-formed checks), it is possible to parse an invalid JSON document but not realize it until later. If you need the entire document to be validated up front then a DOM parser is a better fit for you.
 
