@@ -61,7 +61,7 @@ library
     attoparsec         >= 0.13.1 && < 0.15,
     attoparsec-iso8601 >= 1.0.2.0 && < 1.0.3.0,
     base               >= 4.13 && < 4.17,
-    bytestring         >= 0.10.10 && < 0.12,
+    bytestring         >= 0.10.12 && < 0.12,
     deepseq            >= 1.4.4 && < 1.5,
     dlist              >= 0.8 && < 1.1,
     mtl                >= 2.1 && < 2.3,
