@@ -34,7 +34,7 @@ flag strict
 
 flag native_comp
   description: Target native architecture for C++ compiler
-  default: True
+  default: False
   manual: True
 
 flag debug
