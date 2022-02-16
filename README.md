@@ -1,13 +1,13 @@
-<p align="center">
-<img src="https://raw.githubusercontent.com/velveteer/hermes/master/wings.svg" height=60 width=100 />
-</p>
-<h1 align="center">hermes</h1>
-<p align="center">
+<h1 align="left">
+<img src="https://raw.githubusercontent.com/velveteer/hermes/master/wings.svg" height=25 width=50 />
+hermes
+</h1>
+<p align="left">
 <a href="https://github.com/velveteer/hermes/actions">
-  <img src="https://img.shields.io/github/workflow/status/velveteer/hermes/CI?style=flat-square" alt="CI badge" />
+  <img src="https://img.shields.io/github/workflow/status/velveteer/hermes/CI?style=for-the-badge" alt="CI badge" />
 </a>
 <a href="https://hackage.haskell.org/package/hermes-json">
-  <img src="https://img.shields.io/hackage/v/hermes-json?style=flat-square" alt="Hackage badge" />
+  <img src="https://img.shields.io/hackage/v/hermes-json?label=hackage&style=for-the-badge" alt="Hackage badge" />
 </a>
 </p>
 
@@ -67,27 +67,31 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * Full decoding of a large-ish (12 MB) JSON array of objects 
 * Partial decoding of Twitter status objects to highlight the on-demand benefits
 
-### Intel Core i7-7500U @2.70GHz / 2x8GB RAM @LPDDR3
+### Specs 
+
+* GHC 9.2.1
+* aeson-2.0.3.0 with text-2.0
+* Intel Core i7-7500U @2.70GHz / 2x8GB RAM @LPDDR3
 
 #### Non-threaded runtime
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 515111634200  | 19332030346  | 567061009  | 555768600 | 548405248   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1879357624000 | 109849580814 | 9240070406 | 918469928 | 815792128   |
-| All.Small Object to Map.Hermes Decode               | 1453784       | 99664        | 4509       | 143       | 815792128   |
-| All.Small Object to Map.Aeson Lazy                  | 2936816       | 184144       | 20403      | 1         | 815792128   |
-| All.Small Object to Map.Aeson Strict                | 2954601       | 167788       | 20379      | 1         | 815792128   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 106374445200  | 1634370706   | 150384445  | 77972337  | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 449523758200  | 41027868974  | 1212515956 | 268045285 | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 353756693800  | 33058983332  | 1212278538 | 200617993 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 113706475400  | 3830951512   | 150322956  | 75438334  | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 439971868800  | 7835893708   | 1213065712 | 264393596 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 353582487600  | 34203690928  | 1212032626 | 200502732 | 815792128   |
-| All.Partial Twitter.Hermes Decode                   | 448839050     | 22309802     | 398892     | 4643      | 815792128   |
-| All.Partial Twitter.Aeson Lazy                      | 16644838050   | 1080972950   | 52866100   | 7541778   | 815792128   |
-| All.Partial Twitter.Aeson Strict                    | 14025762400   | 793325836    | 53294115   | 5958334   | 815792128   |
+| All.1 Million 3-Arrays.Hermes [[Double]]            | 514149749400  | 23001383910  | 567060714  | 555767893 | 548405248   |
+| All.1 Million 3-Arrays.Aeson [[Double]]             | 1909749532600 | 105016463882 | 9240071234 | 918470102 | 815792128   |
+| All.Small Object to Map.Hermes Decode               | 1402062       | 89160        | 4311       | 143       | 815792128   |
+| All.Small Object to Map.Aeson Lazy                  | 3149933       | 190718       | 20444      | 5         | 815792128   |
+| All.Small Object to Map.Aeson Strict                | 2960649       | 197972       | 20455      | 3         | 815792128   |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 87606624200   | 882987914    | 131017990  | 61609312  | 815792128   |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 412865060000  | 37200085522  | 1040817535 | 257682836 | 815792128   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 294154477200  | 3203013536   | 1039500388 | 171613607 | 815792128   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 98984943000   | 3869859988   | 131482700  | 61507519  | 815792128   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 416241784400  | 31016972066  | 1040900869 | 257736671 | 815792128   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 295604611200  | 13477999910  | 1040897500 | 171857398 | 815792128   |
+| All.Partial Twitter.Hermes Decode                   | 380242857     | 21886584     | 331150     | 3106      | 815792128   |
+| All.Partial Twitter.Aeson Lazy                      | 14210219600   | 1363261550   | 38167991   | 6912052   | 815792128   |
+| All.Partial Twitter.Aeson Strict                    | 11107521750   | 697866752    | 38738747   | 4728197   | 815792128   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) --> 
 
@@ -98,20 +102,20 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES_THREADED) -->
 | Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
 | --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 541886019300  | 28985190366  | 567061372  | 555825639 | 547356672   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1948081269800 | 127560261526 | 9240069829 | 919131304 | 815792128   |
-| All.Small Object to Map.Hermes Decode               | 1443894       | 82886        | 4262       | 144       | 815792128   |
-| All.Small Object to Map.Aeson Lazy                  | 3010568       | 205200       | 20404      | 2         | 815792128   |
-| All.Small Object to Map.Aeson Strict                | 3012037       | 99100        | 20405      | 2         | 815792128   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 112708023300  | 5172458580   | 150387033  | 79494634  | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 460293246300  | 2987469998   | 1212937927 | 264367279 | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 360104741850  | 6231191600   | 1212295571 | 192141024 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 118564635400  | 8355435606   | 150325103  | 76318688  | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 476108313200  | 33933903066  | 1212647160 | 268222585 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 363291220000  | 15069371922  | 1212036871 | 190951202 | 815792128   |
-| All.Partial Twitter.Hermes Decode                   | 465476487     | 6501684      | 402833     | 4861      | 815792128   |
-| All.Partial Twitter.Aeson Lazy                      | 17562410575   | 370107430    | 53230448   | 7657222   | 815792128   |
-| All.Partial Twitter.Aeson Strict                    | 14433454400   | 1426192330   | 53290220   | 6050622   | 815792128   |
+| All.1 Million 3-Arrays.Hermes [[Double]]            | 541920265800  | 29342742108  | 567061829  | 555826856 | 548405248   |
+| All.1 Million 3-Arrays.Aeson [[Double]]             | 1953230810200 | 126855715860 | 9240069761 | 919129263 | 815792128   |
+| All.Small Object to Map.Hermes Decode               | 1472371       | 91562        | 4311       | 143       | 815792128   |
+| All.Small Object to Map.Aeson Lazy                  | 3096479       | 193244       | 20444      | 6         | 815792128   |
+| All.Small Object to Map.Aeson Strict                | 2986724       | 200024       | 20456      | 5         | 815792128   |
+| All.Full Persons Array.Ordered Keys.Hermes Decode   | 90311085300   | 7526254196   | 130369345  | 60862744  | 815792128   |
+| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 422369991600  | 38053428096  | 1040823664 | 257776459 | 815792128   |
+| All.Full Persons Array.Ordered Keys.Aeson Strict    | 300466422000  | 3072876168   | 1039500630 | 171704298 | 815792128   |
+| All.Full Persons Array.Unordered Keys.Hermes Decode | 100871024200  | 2866865436   | 131482618  | 61527776  | 815792128   |
+| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 424049660600  | 33951808604  | 1040901105 | 258769347 | 815792128   |
+| All.Full Persons Array.Unordered Keys.Aeson Strict  | 303529052800  | 7155692116   | 1040895670 | 172239231 | 815792128   |
+| All.Partial Twitter.Hermes Decode                   | 385226798     | 22763366     | 331159     | 3125      | 815792128   |
+| All.Partial Twitter.Aeson Lazy                      | 14504587600   | 979839172    | 38168119   | 6898312   | 815792128   |
+| All.Partial Twitter.Aeson Strict                    | 11363703650   | 798733766    | 38738875   | 4741485   | 815792128   |
 |                                                     |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) --> 
 
@@ -119,10 +123,11 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 
 ## Performance Tips
 
+* Use `text` >= 2.0 to benefit from its UTF-8 implementation.
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * Decode your object fields in order. Out of order field lookups will slightly degrade performance. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
-* You can improve performance by holding onto your own `HermesEnv`. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
+* You can improve performance by holding onto your own `HermesEnv`. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads. 
 
 ## Limitations
 
