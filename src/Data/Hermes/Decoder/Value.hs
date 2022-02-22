@@ -1,5 +1,6 @@
 {-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MultiWayIf #-}
 
 module Data.Hermes.Decoder.Value
@@ -44,6 +45,9 @@ import qualified Data.Scientific as Sci
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+#if MIN_VERSION_text(2,0,0)
+import qualified Data.Text.Foreign as T
+#endif
 import           UnliftIO.Foreign
   ( CStringLen
   , alloca
@@ -218,6 +222,12 @@ getText :: Value -> Decoder Text
 getText = withCStringLen "text" parseTextFromCStrLen
 {-# INLINE getText #-}
 
+#if MIN_VERSION_text(2,0,0)
+parseTextFromCStrLen :: CStringLen -> Decoder Text
+parseTextFromCStrLen (cstr, len) = liftIO $ T.fromPtr (Foreign.castPtr cstr) (fromIntegral len)
+{-# INLINE parseTextFromCStrLen #-}
+#else
+
 parseTextFromCStrLen :: CStringLen -> Decoder Text
 parseTextFromCStrLen cstr = do
   bs <- liftIO $ Unsafe.unsafePackCStringLen cstr
@@ -236,6 +246,7 @@ asciiTextAtto = do
     Nothing -> pure $ Just txt
     _       -> pure Nothing
 {-# INLINE asciiTextAtto #-}
+#endif
 
 getRawByteString :: Value -> Decoder BS.ByteString
 getRawByteString valPtr = withRunInIO $ \run ->

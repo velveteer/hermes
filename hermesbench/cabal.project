@@ -2,8 +2,5 @@ packages:
   ./hermesbench.cabal
   ../hermes-json.cabal
 tests: True
-allow-newer: *:ghc
-allow-newer: *:ghc-prim
-allow-newer: *:base
-allow-newer: *:Cabal
-allow-newer: *:template-haskell
+constraints: text == 2.0
+allow-newer: all
