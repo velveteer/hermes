@@ -111,7 +111,6 @@ iterateOverFields fk fv iterPtr = withRunInIO $ \runInIO ->
   allocaValue $ \valPtr ->
   go DList.empty keyPtr lenPtr valPtr
   where
-    {-# INLINE go #-}
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap toBool . liftIO $ objectIterIsDoneImpl iterPtr
       if not isOver
@@ -331,7 +330,6 @@ iterateOverArray :: (Value -> Decoder a) -> ArrayIter -> Decoder [a]
 iterateOverArray f iterPtr =
   allocaValue $ \valPtr -> go (0 :: Int) DList.empty valPtr
   where
-    {-# INLINE go #-}
     go !n !acc valPtr = do
       isOver <- fmap toBool . liftIO $ arrayIterIsDoneImpl iterPtr
       if not isOver

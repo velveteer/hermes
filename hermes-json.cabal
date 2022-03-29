@@ -110,8 +110,9 @@ library
     cbits
   install-includes: 
     cbits/simdjson/simdjson.h
-  extra-libraries: 
-    stdc++
+  if os(linux) || os(windows)
+    extra-libraries:
+        stdc++
 
 test-suite hermes-test
   default-language: Haskell2010
@@ -119,7 +120,7 @@ test-suite hermes-test
   hs-source-dirs:   tests
   main-is:          test.hs
   ghc-options: -Wall 
-  build-depends:    
+  build-depends:
     aeson          >= 2.0.1 && < 2.1,
     base,
     bytestring,
@@ -131,4 +132,7 @@ test-suite hermes-test
     tasty          >= 1.4.2 && < 1.5,
     tasty-hedgehog >= 1.1.0 && < 1.2,
     time
+  if os(darwin)
+    extra-libraries:
+        c++
 
