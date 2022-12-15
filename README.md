@@ -4,14 +4,14 @@ hermes
 </h1>
 <p align="left">
 <a href="https://github.com/velveteer/hermes/actions">
-  <img src="https://img.shields.io/github/workflow/status/velveteer/hermes/CI?style=for-the-badge" alt="CI badge" />
+  <img src="https://img.shields.io/github/actions/workflow/status/velveteer/hermes/ci.yaml?branch=master&style=for-the-badge" alt="CI badge" />
 </a>
 <a href="https://hackage.haskell.org/package/hermes-json">
   <img src="https://img.shields.io/hackage/v/hermes-json?label=hackage&style=for-the-badge" alt="Hackage badge" />
 </a>
 </p>
 
-A Haskell interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library for decoding JSON documents. Hermes, messenger of the gods, was the maternal great-grandfather of Jason, son of Aeson. 
+A Haskell interface over the [simdjson](https://github.com/simdjson/simdjson) C++ library for decoding JSON documents. Hermes, messenger of the gods, was the maternal great-grandfather of Jason, son of Aeson.
 
 ## Overview
 
@@ -56,18 +56,18 @@ It looks a little like `Waargonaut.Decode.Decoder m`, just not as polymorphic. T
 
 When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call. The exception contains a `DocumentError` record with some useful information, for example:
 ```haskell
-*Main> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }" 
+*Main> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }"
 Left (SIMDException (DocumentError {path = "/hello/1", errorMsg = "Error while getting value of type text. The JSON element does not have the requested type.", docLocation = "false] }", docDebug = "json_iterator [ depth : 3, structural : 'f', offset : 21', error : No error ]"}))
 ```
 
 ## Benchmarks
 We benchmark the following operations using both `hermes-json` and `aeson` strict ByteString decoders:
-* Decode an array of 1 million 3-element arrays of doubles 
-* Decode a very small object into a Map 
-* Full decoding of a large-ish (12 MB) JSON array of objects 
+* Decode an array of 1 million 3-element arrays of doubles
+* Decode a very small object into a Map
+* Full decoding of a large-ish (12 MB) JSON array of objects
 * Partial decoding of Twitter status objects to highlight the on-demand benefits
 
-### Specs 
+### Specs
 
 * GHC 9.2.1
 * aeson-2.0.3.0 with text-2.0
@@ -93,7 +93,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 | All.Partial Twitter.Aeson Lazy                      | 14210219600   | 1363261550   | 38167991   | 6912052   | 815792128   |
 | All.Partial Twitter.Aeson Strict                    | 11107521750   | 697866752    | 38738747   | 4728197   | 815792128   |
 |                                                     |
-<!-- AUTO-GENERATED-CONTENT:END (BENCHES) --> 
+<!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 
 ![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench.svg)
 
@@ -117,7 +117,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 | All.Partial Twitter.Aeson Lazy                      | 14504587600   | 979839172    | 38168119   | 6898312   | 815792128   |
 | All.Partial Twitter.Aeson Strict                    | 11363703650   | 798733766    | 38738875   | 4741485   | 815792128   |
 |                                                     |
-<!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) --> 
+<!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) -->
 
 ![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench_threaded.svg)
 
@@ -127,17 +127,17 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * Decode your object fields in order. Out of order field lookups will slightly degrade performance. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
-* You can improve performance by holding onto your own `HermesEnv`. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads. 
+* You can improve performance by holding onto your own `HermesEnv`. `decodeEither` creates and destroys the simdjson instances every time it runs, which adds a performance penalty. Beware, do _not_ share a `HermesEnv` across multiple threads.
 
 ## Limitations
 
-Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it. 
+Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it.
 
 Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and basic well-formed checks), it is possible to parse an invalid JSON document but not realize it until later. If you need the entire document to be validated up front then a DOM parser is a better fit for you.
 
 > The On Demand approach is less safe than DOM: we only validate the components of the JSON document that are used and it is possible to begin ingesting an invalid document only to find out later that the document is invalid. Are you fine ingesting a large JSON document that starts with well formed JSON but ends with invalid JSON content?
 
-This library currently cannot decode scalar documents, e.g. a single string, number, boolean, or null as a JSON document. 
+This library currently cannot decode scalar documents, e.g. a single string, number, boolean, or null as a JSON document.
 
 ## Portability
 
