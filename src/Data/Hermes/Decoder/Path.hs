@@ -10,7 +10,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import qualified Data.Text as T
 
-import           Data.Hermes.Decoder.Types (Decoder, HermesEnv(hPath))
+import           Data.Hermes.Decoder.Internal (Decoder, HermesEnv(hPath))
 
 withPath :: Text -> Decoder a -> Decoder a
 withPath key =

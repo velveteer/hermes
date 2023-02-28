@@ -6,10 +6,10 @@
 -- when it's passed by reference across the C FFI.
 --
 -- `decodeEither` provides the quickest way to feed the initial `Value` to your decoder.
--- It does this by using `withDocumentValue` to obtain a top-level `Value` from the
--- simdjson document instance. Decoding a document into a scalar from a `Value` is not
--- supported by simdjson. While simdjson can cast a document directly to a scalar, this library
--- currently exposes no interface for this.
+-- It does this by obtaining a top-level `Value` from the simdjson document
+-- instance. Decoding a document into a scalar from a `Value` is not supported
+-- by simdjson. While simdjson can cast a document directly to a scalar, this
+-- library currently exposes no interface for this.
 
 module Data.Hermes
   ( -- * Decoding from ByteString input
@@ -17,8 +17,6 @@ module Data.Hermes
     -- * Decoder monad
   , Decoder(runDecoder)
   , HermesEnv
-  , withHermesEnv
-  , withInputBuffer
     -- * Object field accessors
     -- | Obtain an object using `withObject` that can be passed
     -- to these field lookup functions.
@@ -76,19 +74,23 @@ module Data.Hermes
   , Value
   ) where
 
+import           Control.Exception (try)
 import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
 import           Data.ByteString (ByteString)
 import qualified System.IO.Unsafe as Unsafe
-import           UnliftIO.Exception (try)
 
 import           Data.Hermes.Decoder
+import           Data.Hermes.Decoder.Internal
+  ( Decoder(..)
+  , DocumentError(..)
+  , HermesEnv
+  , HermesException(..)
+  , withHermesEnv
+  )
 import           Data.Hermes.SIMDJSON.Types
 import           Data.Hermes.SIMDJSON.Wrapper (withInputBuffer)
 
-
--- | Construct a `HermesEnv` and use it to run a `Decoder` via the C FFI.
--- There is a small performance penalty for creating and destroying the simdjson
--- instances on each decode, so this is not recommended for running in tight loops.
+-- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 decodeEither :: (Value -> Decoder a) -> ByteString -> Either HermesException a
 decodeEither d bs =
   Unsafe.unsafePerformIO . try .  withHermesEnv $ \hEnv ->
