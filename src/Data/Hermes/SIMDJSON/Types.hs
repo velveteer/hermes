@@ -20,7 +20,7 @@ module Data.Hermes.SIMDJSON.Types
   )
   where
 
-import           UnliftIO.Foreign (Ptr)
+import           Foreign.Ptr (Ptr)
 
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
@@ -104,4 +104,3 @@ data SIMDErrorCode =
   | OUT_OF_BOUNDS
   | NUM_ERROR_CODES
   deriving (Eq, Show, Bounded, Enum)
-

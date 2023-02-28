@@ -35,7 +35,8 @@ module Data.Hermes.SIMDJSON.Bindings
   , toDebugStringImpl
   ) where
 
-import           UnliftIO.Foreign (CBool(..), CInt(..), CSize(..), CString, FunPtr, Ptr)
+import           Foreign.C (CBool(..), CInt(..), CSize(..), CString)
+import           Foreign.Ptr (FunPtr, Ptr)
 
 import           Data.Hermes.SIMDJSON.Types
 
@@ -138,4 +139,3 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> IO ()
-

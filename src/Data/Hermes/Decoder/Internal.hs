@@ -3,46 +3,41 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | `Decoder` is the monad used for decoding JSON with simdjson via the FFI.
--- This module contains helpers for working with the `Decoder` context.
-
-module Data.Hermes.Decoder.Types
-  ( Decoder(runDecoder)
+module Data.Hermes.Decoder.Internal
+  ( Decoder(..)
   , HermesEnv(..)
   , HermesException(..)
-  , DocumentError(path, errorMsg, docLocation, docDebug)
-  , allocaValue
+  , DocumentError(..)
+  , withHermesEnv
   , allocaArray
   , allocaArrayIter
   , allocaObject
   , allocaObjectIter
-  , handleErrorCode
+  , allocaValue
   , typePrefix
-  , withDocumentPointer
+  , handleErrorCode
   , withParserPointer
-  , withHermesEnv
+  , withDocumentPointer
+  , liftIO
+  , withRunInIO
   ) where
 
 import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.IO.Unlift (MonadUnliftIO)
+import           Control.Exception (Exception, bracket, catch, throwIO)
 import           Control.Monad.Reader (MonadReader, asks)
-import           Control.Monad.Trans.Reader (ReaderT)
+import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Reader (ReaderT(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Foreign.C as F
+import qualified Foreign.ForeignPtr as F
+import qualified Foreign.Marshal.Alloc as F
+import qualified Foreign.Ptr as F
 import           GHC.Generics (Generic)
-import           UnliftIO.Exception (Exception, bracket, catch, throwIO)
-import           UnliftIO.Foreign
-  ( CInt
-  , ForeignPtr
-  , allocaBytes
-  , finalizeForeignPtr
-  , peekCString
-  , withForeignPtr
-  )
 
 import           Data.Hermes.SIMDJSON.Bindings (getErrorMessageImpl)
 import           Data.Hermes.SIMDJSON.Types
@@ -60,7 +55,7 @@ import           Data.Hermes.SIMDJSON.Types
 import           Data.Hermes.SIMDJSON.Wrapper
 
 -- | A Decoder is some context around the IO needed by the C FFI to allocate local memory.
--- Users shouldn't need to deal with the underlying IO except in advanced use cases.
+-- Users have no access to the underlying IO, since this could allow decoders to launch nukes.
 -- Using `Data.Hermes.decodeEither` discharges the IO and returns us to purity,
 -- since we know decoding a document is referentially transparent.
 newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
@@ -68,14 +63,12 @@ newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
     ( Functor
     , Applicative
     , Monad
-    , MonadIO
     , MonadReader HermesEnv
-    , MonadUnliftIO
     )
 
 instance Alternative Decoder where
   empty = fail "Unspecified error"
-  ad <|> bd = ad `catch` (\(_err :: HermesException) -> bd)
+  ad <|> bd = withRunInIO $ \u -> u ad `catch` (\(_err :: HermesException) -> u bd)
 
 instance MonadFail Decoder where
   {-# INLINE fail #-}
@@ -86,8 +79,8 @@ instance MonadFail Decoder where
 -- when an object field or array value is entered and which is displayed in errors.
 data HermesEnv =
   HermesEnv
-    { hParser   :: !(ForeignPtr SIMDParser)
-    , hDocument :: !(ForeignPtr SIMDDocument)
+    { hParser   :: !(F.ForeignPtr SIMDParser)
+    , hDocument :: !(F.ForeignPtr SIMDDocument)
     , hPath     :: !Text
     }
 
@@ -112,16 +105,15 @@ mkHermesEnv_ = mkHermesEnv Nothing
 -- | Internal finalizer for simdjson instances.
 cleanupHermesEnv :: HermesEnv -> IO ()
 cleanupHermesEnv hEnv = do
-  finalizeForeignPtr (hDocument hEnv)
-  finalizeForeignPtr (hParser hEnv)
+  F.finalizeForeignPtr (hDocument hEnv)
+  F.finalizeForeignPtr (hParser hEnv)
 
--- | Run an action that is passed a `HermesEnv`.
--- The simdjson instances are created and destroyed using the `bracket` function.
-withHermesEnv :: MonadUnliftIO m => (HermesEnv -> m a) -> m a
+-- | Run an action in IO that is passed a `HermesEnv`.
+withHermesEnv :: (HermesEnv -> IO a) -> IO a
 withHermesEnv = bracket acquire release
   where
-    acquire = liftIO mkHermesEnv_
-    release = liftIO . cleanupHermesEnv
+    acquire = mkHermesEnv_
+    release = cleanupHermesEnv
 
 -- | The library can throw exceptions from simdjson in addition to
 -- its own exceptions.
@@ -186,26 +178,24 @@ throwHermes msg = do
   liftIO . throwIO . InternalException $
     mkDocumentError pth msg "" ""
 
--- Foreign helpers
-
-handleErrorCode :: Text -> CInt -> Decoder ()
+handleErrorCode :: Text -> F.CInt -> Decoder ()
 handleErrorCode pre errInt = do
   let errCode = toEnum $ fromIntegral errInt
   if errCode == SUCCESS
   then pure ()
   else do
-    errStr <- peekCString =<< liftIO (getErrorMessageImpl errInt)
+    errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
     throwSIMD errCode $ pre <> T.pack errStr
 {-# INLINE handleErrorCode #-}
 
 withParserPointer :: (Parser -> Decoder a) -> Decoder a
 withParserPointer f =
-  asks hParser >>= \parserFPtr -> withForeignPtr parserFPtr $ f . Parser
+  asks hParser >>= \parserFPtr -> withRunInIO $ \u -> F.withForeignPtr parserFPtr $ u . f . Parser
 {-# INLINE withParserPointer #-}
 
 withDocumentPointer :: (Document -> Decoder a) -> Decoder a
 withDocumentPointer f =
-  asks hDocument >>= \docFPtr -> withForeignPtr docFPtr $ f . Document
+  asks hDocument >>= \docFPtr -> withRunInIO $ \u -> F.withForeignPtr docFPtr $ u . f . Document
 {-# INLINE withDocumentPointer #-}
 
 allocaValue :: (Value -> Decoder a) -> Decoder a
@@ -227,3 +217,17 @@ allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
 allocaObjectIter :: (ObjectIter -> Decoder a) -> Decoder a
 allocaObjectIter f = allocaBytes 24 $ \iter -> f (ObjectIter iter)
 {-# INLINE allocaObjectIter #-}
+
+allocaBytes :: Int -> (F.Ptr a -> Decoder b) -> Decoder b
+allocaBytes size action = withRunInIO (\u -> F.allocaBytes size (u . action))
+{-# INLINE allocaBytes #-}
+
+withRunInIO :: ((forall a. Decoder a -> IO a) -> IO b) -> Decoder b
+withRunInIO inner =
+  Decoder . ReaderT $ \r ->
+    inner (flip runReaderT r . runDecoder)
+{-# INLINE withRunInIO #-}
+
+liftIO :: IO a -> Decoder a
+liftIO = Decoder . lift
+{-# INLINE liftIO #-}

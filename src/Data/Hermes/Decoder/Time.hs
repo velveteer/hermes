@@ -19,7 +19,7 @@ import qualified Data.Time.Calendar.Month.Compat as Time
 import qualified Data.Time.Calendar.Quarter.Compat as Time
 import qualified Data.Time.LocalTime as Local
 
-import           Data.Hermes.Decoder.Types (Decoder)
+import           Data.Hermes.Decoder.Internal (Decoder)
 import           Data.Hermes.Decoder.Value (withText)
 import           Data.Hermes.SIMDJSON
 
