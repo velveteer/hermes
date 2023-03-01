@@ -1,5 +1,12 @@
 # Revision history for hermes-json
 
+## 0.3.0.0 -- 2023-03-01
+
+* Remove MonadIO and MonadUnliftIO instances for `Decoder`
+* Remove unliftio dependency
+* Support system-cxx-std-lib for GHC >= 9.4
+* Fix GitHub CI badge
+
 ## 0.2.0.1 -- 2022-10-10
 
 * Add support for GHC 9.4.1
