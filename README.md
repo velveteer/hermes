@@ -27,6 +27,8 @@ This library exposes functions that can be used to write decoders for JSON docum
 
 With this in mind, `Data.Hermes` parsers can decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. This is because `Data.Aeson.FromJSON` converts the entire document into a `Data.Aeson.Value`, which means memory usage increases linearly with the input size. The `simdjson::ondemand` API does not have this constraint because it iterates over the JSON string in memory without constructing an intermediate tree. This means decoders are truly lazy and you only pay for what you use.
 
+For another incremental JSON parser in Haskell, see [json-stream](https://hackage.haskell.org/package/json-stream).
+
 ## Usage
 
 This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the tests and benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. `simdjson::ondemand` exceptions will be caught and re-thrown with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
@@ -34,92 +36,64 @@ This library does _not_ offer a Haskell API over the entire simdjson On Demand A
 ### Decoders
 
 ```haskell
-personDecoder :: Value -> Decoder Person
-personDecoder = withObject $ \obj ->
+import qualified Data.ByteString as BS
+import qualified Data.Hermes as H
+
+personDecoder :: H.Value -> H.Decoder Person
+personDecoder = H.withObject $ \obj ->
   Person
-    <$> atKey "_id" text obj
-    <*> atKey "index" int obj
-    <*> atKey "guid" text obj
-    <*> atKey "isActive" bool obj
-    <*> atKey "balance" text obj
-    <*> atKey "picture" (nullable text) obj
-    <*> atKey "latitude" scientific obj
+    <$> H.atKey "_id" H.text obj
+    <*> H.atKey "index" H.int obj
+    <*> H.atKey "guid" H.text obj
+    <*> H.atKey "isActive" H.bool obj
+    <*> H.atKey "balance" H.text obj
+    <*> H.atKey "picture" (H.nullable H.text) obj
+    <*> H.atKey "latitude" H.scientific obj
 
 -- Decode a strict ByteString.
-decodePersons :: ByteString -> Either HermesException [Person]
-decodePersons = decodeEither $ list personDecoder
+decodePersons :: BS.ByteString -> Either H.HermesException [Person]
+decodePersons = H.decodeEither $ H.list personDecoder
 ```
-
-It looks a little like `Waargonaut.Decode.Decoder m`, just not as polymorphic. The interface is copied because it's elegant and does not rely on typeclasses. However, `hermes` does not give you a cursor to play with, the cursor is implied and is forward-only (except when accessing object fields). This limitation allows us to write very fast decoders.
-
 ### Exceptions
 
-When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call. The exception contains a `DocumentError` record with some useful information, for example:
+When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call.
+
 ```haskell
 *Main> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }"
-Left (SIMDException (DocumentError {path = "/hello/1", errorMsg = "Error while getting value of type text. The JSON element does not have the requested type.", docLocation = "false] }", docDebug = "json_iterator [ depth : 3, structural : 'f', offset : 21', error : No error ]"}))
+Left (SIMDException (DocumentError {path = "/hello/1", errorMsg = "Error while getting value of type text. The JSON element does not have the requested type."))
 ```
 
 ## Benchmarks
 We benchmark the following operations using both `hermes-json` and `aeson` strict ByteString decoders:
 * Decode an array of 1 million 3-element arrays of doubles
-* Decode a very small object into a Map
-* Full decoding of a large-ish (12 MB) JSON array of objects
+* Full decoding of a large-ish (12 MB) JSON array of Person objects
 * Partial decoding of Twitter status objects to highlight the on-demand benefits
+* Decoding entire documents into `Data.Aeson.Value`
 
 ### Specs
 
-* GHC 9.2.1
-* aeson-2.0.3.0 with text-2.0
-* Intel Core i7-7500U @2.70GHz / 2x8GB RAM @LPDDR3
+* GHC 9.4.4 with `-O2`
+* aeson-2.1.2.1 with text-2.0.2
+* Apple M1 Pro
 
-#### Non-threaded runtime
+![](https://raw.githubusercontent.com/velveteer/hermes/master/hermes-bench/bench.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
-| Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
-| --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 514149749400  | 23001383910  | 567060714  | 555767893 | 548405248   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1909749532600 | 105016463882 | 9240071234 | 918470102 | 815792128   |
-| All.Small Object to Map.Hermes Decode               | 1402062       | 89160        | 4311       | 143       | 815792128   |
-| All.Small Object to Map.Aeson Lazy                  | 3149933       | 190718       | 20444      | 5         | 815792128   |
-| All.Small Object to Map.Aeson Strict                | 2960649       | 197972       | 20455      | 3         | 815792128   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 87606624200   | 882987914    | 131017990  | 61609312  | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 412865060000  | 37200085522  | 1040817535 | 257682836 | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 294154477200  | 3203013536   | 1039500388 | 171613607 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 98984943000   | 3869859988   | 131482700  | 61507519  | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 416241784400  | 31016972066  | 1040900869 | 257736671 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 295604611200  | 13477999910  | 1040897500 | 171857398 | 815792128   |
-| All.Partial Twitter.Hermes Decode                   | 380242857     | 21886584     | 331150     | 3106      | 815792128   |
-| All.Partial Twitter.Aeson Lazy                      | 14210219600   | 1363261550   | 38167991   | 6912052   | 815792128   |
-| All.Partial Twitter.Aeson Strict                    | 11107521750   | 697866752    | 38738747   | 4728197   | 815792128   |
-|                                                     |
+| Name                                    | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied     | Peak Memory |
+| --------------------------------------- | ------------- | ------------ | ---------- | ---------- | ----------- |
+| All.Decode.Arrays.Hermes                | 264047000000  | 13678027818  | 526893404  | 423269323  | 400556032   |
+| All.Decode.Arrays.Aeson                 | 2139468800000 | 58623441378  | 7095177224 | 2316652213 | 1238368256  |
+| All.Decode.Persons.Hermes               | 47245875000   | 3666592466   | 145187125  | 56382103   | 1238368256  |
+| All.Decode.Persons.Aeson                | 132630350000  | 13194813528  | 357269938  | 188528685  | 1238368256  |
+| All.Decode.Partial Twitter.Hermes       | 243684082     | 13326876     | 355734     | 3197       | 1238368256  |
+| All.Decode.Partial Twitter.JsonStream   | 2113555468    | 182840482    | 15259521   | 273770     | 1238368256  |
+| All.Decode.Partial Twitter.Aeson        | 4241578125    | 421778322    | 12518566   | 4638230    | 1238368256  |
+| All.Decode.Persons (Aeson Value).Hermes | 109004800000  | 6785795490   | 304707610  | 137784629  | 1238368256  |
+| All.Decode.Persons (Aeson Value).Aeson  | 118259950000  | 8690925408   | 286148908  | 177027037  | 1238368256  |
+| All.Decode.Twitter (Aeson Value).Hermes | 4192987500    | 278048064    | 12386839   | 4150484    | 1238368256  |
+| All.Decode.Twitter (Aeson Value).Aeson  | 4796893750    | 431882554    | 12519865   | 5538783    | 1238368256  |
+|                                         |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
-
-![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench.svg)
-
-#### Threaded runtime
-
-<!-- AUTO-GENERATED-CONTENT:START (BENCHES_THREADED) -->
-| Name                                                | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied    | Peak Memory |
-| --------------------------------------------------- | ------------- | ------------ | ---------- | --------- | ----------- |
-| All.1 Million 3-Arrays.Hermes [[Double]]            | 541920265800  | 29342742108  | 567061829  | 555826856 | 548405248   |
-| All.1 Million 3-Arrays.Aeson [[Double]]             | 1953230810200 | 126855715860 | 9240069761 | 919129263 | 815792128   |
-| All.Small Object to Map.Hermes Decode               | 1472371       | 91562        | 4311       | 143       | 815792128   |
-| All.Small Object to Map.Aeson Lazy                  | 3096479       | 193244       | 20444      | 6         | 815792128   |
-| All.Small Object to Map.Aeson Strict                | 2986724       | 200024       | 20456      | 5         | 815792128   |
-| All.Full Persons Array.Ordered Keys.Hermes Decode   | 90311085300   | 7526254196   | 130369345  | 60862744  | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Lazy      | 422369991600  | 38053428096  | 1040823664 | 257776459 | 815792128   |
-| All.Full Persons Array.Ordered Keys.Aeson Strict    | 300466422000  | 3072876168   | 1039500630 | 171704298 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Hermes Decode | 100871024200  | 2866865436   | 131482618  | 61527776  | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Lazy    | 424049660600  | 33951808604  | 1040901105 | 258769347 | 815792128   |
-| All.Full Persons Array.Unordered Keys.Aeson Strict  | 303529052800  | 7155692116   | 1040895670 | 172239231 | 815792128   |
-| All.Partial Twitter.Hermes Decode                   | 385226798     | 22763366     | 331159     | 3125      | 815792128   |
-| All.Partial Twitter.Aeson Lazy                      | 14504587600   | 979839172    | 38168119   | 6898312   | 815792128   |
-| All.Partial Twitter.Aeson Strict                    | 11363703650   | 798733766    | 38738875   | 4741485   | 815792128   |
-|                                                     |
-<!-- AUTO-GENERATED-CONTENT:END (BENCHES_THREADED) -->
-
-![](https://raw.githubusercontent.com/velveteer/hermes/master/hermesbench/bench_threaded.svg)
 
 ## Performance Tips
 

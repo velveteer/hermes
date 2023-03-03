@@ -18,6 +18,9 @@ jobs:
         ghc: ['9.4', '9.2', '8.10']
         cabal: ['latest']
         os: [ubuntu-latest, macOS-latest, windows-latest]
+        exclude:
+          - ghc: 8.10
+            os: windows-latest
     steps:
       - uses: actions/checkout@v3
       - run: mkdir artifact
@@ -47,7 +50,7 @@ jobs:
 
       - run: cabal sdist --output-dir artifact/${{ matrix.os }}
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: hermes-json-${{ github.sha }}
           path: artifact
@@ -59,7 +62,7 @@ jobs:
     steps:
 
       - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v3
         with:
           name: hermes-json-${{ github.sha }}
           path: artifact

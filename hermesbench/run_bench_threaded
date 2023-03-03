@@ -1,4 +1,0 @@
-#! /bin/bash
-exec cabal bench \
-  --ghc-options="-threaded" \
-  --benchmark-options '--csv=bench_threaded.csv --svg=bench_threaded.svg +RTS -T'

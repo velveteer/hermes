@@ -35,8 +35,10 @@ module Data.Hermes
   , string
   , text
   , list
+  , vector
   , nullable
   , objectAsKeyValues
+  , objectAsMap
     -- ** Date and time
     -- | Parses date and time types from Data.Time using the
     -- same attoparsec parsers as Data.Aeson via
@@ -53,6 +55,7 @@ module Data.Hermes
   , HermesException(..)
   , DocumentError(..)
     -- * Value helpers
+  , getType
   , isNull
   , withArray
   , withBool
@@ -72,6 +75,7 @@ module Data.Hermes
   , Object
   , Parser
   , Value
+  , ValueType(..)
   ) where
 
 import           Control.Exception (try)
