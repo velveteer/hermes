@@ -72,7 +72,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 
 ### Specs
 
-* GHC 9.4.4 with `-O2`
+* GHC 9.4.4
 * aeson-2.1.2.1 with text-2.0.2
 * Apple M1 Pro
 
