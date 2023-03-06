@@ -1,7 +1,11 @@
 -- | Contains functions for constructing and working with foreign simdjson instances.
 
 module Data.Hermes.SIMDJSON.Wrapper
-  ( getDocumentInfo
+  ( allocaArray
+  , allocaArrayIter
+  , allocaObject
+  , allocaObjectIter
+  , allocaValue
   , mkSIMDParser
   , mkSIMDDocument
   , mkSIMDPaddedStr
@@ -9,36 +13,23 @@ module Data.Hermes.SIMDJSON.Wrapper
   )
   where
 
-import           Control.Monad.IO.Class (liftIO)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Unsafe as Unsafe
 import           Data.Maybe (fromMaybe)
-import           Data.Text (Text)
-import qualified Data.Text as T
 import           Control.Exception (bracket, mask_)
-import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.Marshal.Alloc as F
-import qualified Foreign.Storable as F
+import qualified Foreign.Ptr as F
 
 import           Data.Hermes.SIMDJSON.Bindings
-  ( currentLocationImpl
-  , deleteDocumentImpl
+  ( deleteDocumentImpl
   , deleteInputImpl
   , makeDocumentImpl
   , makeInputImpl
   , parserDestroy
   , parserInit
-  , toDebugStringImpl
   )
 import           Data.Hermes.SIMDJSON.Types
-  ( Document
-  , InputBuffer(..)
-  , PaddedString
-  , SIMDDocument
-  , SIMDErrorCode(..)
-  , SIMDParser
-  )
 
 mkSIMDParser :: Maybe Int -> IO (F.ForeignPtr SIMDParser)
 mkSIMDParser mCap = mask_ $ do
@@ -66,17 +57,26 @@ withInputBuffer bs f =
     acquire = mkSIMDPaddedStr bs
     release = F.finalizeForeignPtr
 
--- | Read the document location and debug string. If the iterator is out of bounds
--- then we abort reading from the iterator buffers to prevent reading garbage.
-getDocumentInfo :: Document -> IO (Text, Text)
-getDocumentInfo docPtr = F.alloca $ \locStrPtr -> F.alloca $ \lenPtr -> do
-  err <- liftIO $ currentLocationImpl docPtr locStrPtr
-  let errCode = toEnum $ fromIntegral err
-  if errCode == OUT_OF_BOUNDS
-    then pure ("out of bounds", "")
-    else F.allocaBytes 128 $ \dbStrPtr -> do
-      locStr <- fmap T.pack $ F.peekCString =<< F.peek locStrPtr
-      toDebugStringImpl docPtr dbStrPtr lenPtr
-      len <- fmap fromIntegral $ F.peek lenPtr
-      debugStr <- fmap T.pack $ F.peekCStringLen (dbStrPtr, len)
-      pure (locStr, debugStr)
+allocaValue :: (Value -> IO a) -> IO a
+allocaValue f = allocaBytes 24 $ \val -> f (Value val)
+{-# INLINE allocaValue #-}
+
+allocaObject :: (Object -> IO a) -> IO a
+allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
+{-# INLINE allocaObject #-}
+
+allocaArray :: (Array -> IO a) -> IO a
+allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
+{-# INLINE allocaArray #-}
+
+allocaArrayIter :: (ArrayIter -> IO a) -> IO a
+allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
+{-# INLINE allocaArrayIter #-}
+
+allocaObjectIter :: (ObjectIter -> IO a) -> IO a
+allocaObjectIter f = allocaBytes 24 $ \iter -> f (ObjectIter iter)
+{-# INLINE allocaObjectIter #-}
+
+allocaBytes :: Int -> (F.Ptr a -> IO b) -> IO b
+allocaBytes size action = F.allocaBytes size action
+{-# INLINE allocaBytes #-}

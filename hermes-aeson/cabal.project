@@ -1,0 +1,3 @@
+packages:
+  ./hermes-aeson.cabal
+  ../hermes-json.cabal

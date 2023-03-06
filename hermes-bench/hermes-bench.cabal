@@ -1,5 +1,5 @@
 cabal-version: 3.0
-name: hermesbench
+name: hermes-bench
 version: 0.1.0.0
 license: MIT
 author: Josh Miller
@@ -8,20 +8,21 @@ maintainer: notjoshmiller@gmail.com
 extra-source-files:
     json/twitter100.json
   , json/persons9000.json
-  , json/small_map.json
 
 benchmark bench
   build-depends:
-    aeson       >= 2.0.3 && < 2.2,
+    aeson       >= 2.1.2.1 && < 2.2,
     base        >= 4.14.3 && < 4.18,
     bytestring  >= 0.10.12 && < 0.12,
     deepseq     >= 1.4.4 && < 1.5,
     containers  >= 0.6.5 && < 0.7,
+    json-stream >= 0.4 && < 0.5,
     scientific  >= 0.3.7 && < 0.4,
     text        >= 2.0 && < 2.1,
     tasty       >= 1.4.2 && < 1.6,
     tasty-bench >= 0.3 && < 0.4,
-    hermes-json
+    hermes-json,
+    hermes-aeson
   default-extensions: OverloadedStrings
   default-language:   Haskell2010
   ghc-options:        -Wall -O2

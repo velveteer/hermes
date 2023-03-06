@@ -1,36 +1,26 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Data.Hermes.Decoder.Path
-  ( dot
-  , removePath
-  , withPath
+  ( withPath
   , withPathIndex
+  , withPathOverride
   ) where
 
-import           Control.Monad.Reader (local)
-import           Data.Maybe (fromMaybe)
+import           Control.Monad.Reader (MonadReader, local)
 import           Data.Text (Text)
 import qualified Data.Text as T
 
-import           Data.Hermes.Decoder.Internal (Decoder, HermesEnv(hPath))
+import           Data.Hermes.Decoder.Internal (HermesEnv(hPath))
 
-withPath :: Text -> Decoder a -> Decoder a
-withPath key =
-  local $ \st -> st { hPath = hPath st <> key }
+withPath :: MonadReader HermesEnv m => Text -> m a -> m a
+withPath key = local $ \st -> st { hPath = hPath st <> "/" <> key }
 {-# INLINE withPath #-}
 
-removePath :: Text -> Decoder a -> Decoder a
-removePath key =
-  local $ \st -> st { hPath = fromMaybe (hPath st) (T.stripSuffix key $ hPath st) }
-{-# INLINE removePath #-}
+withPathOverride :: MonadReader HermesEnv m => Text -> m a -> m a
+withPathOverride path = local $ \st -> st { hPath = path }
+{-# INLINE withPathOverride #-}
 
-withPathIndex :: Int -> Decoder a -> Decoder a
-withPathIndex idx =
-  local $ \st -> st
-    { hPath = fromMaybe (hPath st) (T.stripSuffix (showInt $ max 0 (idx - 1)) $ hPath st)
-           <> showInt idx
-    }
-  where showInt i = dot . T.pack $ show i
+withPathIndex :: MonadReader HermesEnv m => Int -> m a -> m a
+withPathIndex idx = local $ \st -> st { hPath = hPath st <> showInt idx }
+  where showInt i = T.cons '/' . T.pack $ show i
 {-# INLINE withPathIndex #-}
-
-dot :: Text -> Text
-dot = T.cons '/'
-{-# INLINE dot #-}

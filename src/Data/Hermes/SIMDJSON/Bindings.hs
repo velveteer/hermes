@@ -5,7 +5,6 @@ module Data.Hermes.SIMDJSON.Bindings
   , arrayIterIsDoneImpl
   , arrayIterMoveNextImpl
   , atPointerImpl
-  , currentLocationImpl
   , deleteDocumentImpl
   , deleteInputImpl
   , doubleArrayImpl
@@ -13,6 +12,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , findFieldUnorderedImpl
   , getArrayFromValueImpl
   , getArrayIterFromValueImpl
+  , getArrayIterLenFromValueImpl
   , getArrayLenFromValueImpl
   , getBoolImpl
   , getDocumentValueImpl
@@ -23,6 +23,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , getObjectIterFromValueImpl
   , getRawJSONTokenImpl
   , getStringImpl
+  , getTypeImpl
   , intArrayImpl
   , isNullImpl
   , makeDocumentImpl
@@ -32,7 +33,6 @@ module Data.Hermes.SIMDJSON.Bindings
   , objectIterMoveNextImpl
   , parserInit
   , parserDestroy
-  , toDebugStringImpl
   ) where
 
 import           Foreign.C (CBool(..), CInt(..), CSize(..), CString)
@@ -96,6 +96,9 @@ foreign import ccall unsafe "double_array" doubleArrayImpl
 foreign import ccall unsafe "get_array_iter_from_value" getArrayIterFromValueImpl
   :: Value -> ArrayIter -> IO CInt
 
+foreign import ccall unsafe "get_array_iter_len_from_value" getArrayIterLenFromValueImpl
+  :: Value -> ArrayIter -> Ptr CSize -> IO CInt
+
 foreign import ccall unsafe "arr_iter_is_done" arrayIterIsDoneImpl
   :: ArrayIter -> IO CBool
 
@@ -115,15 +118,6 @@ foreign import ccall unsafe "find_field" findFieldImpl
 foreign import ccall unsafe "get_error_message" getErrorMessageImpl
   :: CInt -> IO CString
 
-foreign import ccall unsafe "current_location" currentLocationImpl
-  :: Document -> Ptr CString -> IO CInt
-
-foreign import ccall unsafe "to_debug_string" toDebugStringImpl
-  :: Document -> CString -> Ptr CSize -> IO ()
-
-foreign import ccall unsafe "is_null" isNullImpl
-  :: Value -> IO CBool
-
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
   :: Value -> Ptr Int -> IO CInt
@@ -139,3 +133,9 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> IO ()
+
+foreign import ccall unsafe "get_type" getTypeImpl
+  :: Value -> Ptr CInt -> IO CInt
+
+foreign import ccall unsafe "is_null" isNullImpl
+  :: Value -> Ptr CBool -> IO CInt

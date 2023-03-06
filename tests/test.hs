@@ -14,6 +14,7 @@ import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import qualified Data.Time as Time
+import qualified Data.Vector as V
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 import           Hedgehog
@@ -106,7 +107,7 @@ data Person =
     , age           :: Int
     , latitude      :: Double
     , longitude     :: Double
-    , tags          :: [Text]
+    , tags          :: V.Vector Text
     , friends       :: [Friend]
     , doubles       :: [[Double]]
     , greeting      :: Maybe Text
@@ -129,7 +130,7 @@ data PersonOptional =
     , age           :: Maybe Int
     , latitude      :: Maybe Double
     , longitude     :: Maybe Double
-    , tags          :: Maybe [Text]
+    , tags          :: Maybe (V.Vector Text)
     , friends       :: Maybe [Friend]
     , doubles       :: Maybe [[Double]]
     , greeting      :: Maybe (Maybe Text)
@@ -174,7 +175,7 @@ decodePerson = withObject $ \obj ->
     <*> atKey "age" int obj
     <*> atKey "latitude" double obj
     <*> atKey "longitude" double obj
-    <*> atKey "tags" (list text) obj
+    <*> atKey "tags" (vector text) obj
     <*> atKey "friends" (list decodeFriend) obj
     <*> atKey "doubles" (list (list double)) obj
     <*> atKey "greeting" (nullable text) obj
@@ -196,7 +197,7 @@ decodePersonOptional = withObject $ \obj ->
     <*> atKeyOptional "age" int obj
     <*> atKeyOptional "latitude" double obj
     <*> atKeyOptional "longitude" double obj
-    <*> atKeyOptional "tags" (list text) obj
+    <*> atKeyOptional "tags" (vector text) obj
     <*> atKeyOptional "friends" (list decodeFriend) obj
     <*> atKeyOptional "doubles" (list (list double)) obj
     <*> atKeyOptional "greeting" (nullable text) obj
@@ -223,7 +224,7 @@ genPerson = Person
   <*> Gen.int (Range.linear 0 100)
   <*> genDouble
   <*> genDouble
-  <*> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode)
+  <*> (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.list (Range.linear 0 100) genFriend
   <*> Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble)
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
@@ -245,7 +246,7 @@ genPersonOptional = PersonOptional
   <*> Gen.maybe (Gen.int (Range.linear 0 100))
   <*> Gen.maybe genDouble
   <*> Gen.maybe genDouble
-  <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
+  <*> Gen.maybe (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
   <*> Gen.maybe (Gen.list (Range.linear 0 100) genFriend)
   <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble))
   <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
