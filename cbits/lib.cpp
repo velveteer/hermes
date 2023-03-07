@@ -2,10 +2,6 @@
 using namespace simdjson;
 extern "C" {
   ondemand::parser *parser_init(size_t max_cap) {
-    /* auto my_implementation = available_implementations["haswell"]; */
-    /* if(! my_implementation) { exit(1); } */
-    /* if(! my_implementation->supported_by_runtime_system()) { exit(1); } */
-    /* active_implementation = my_implementation; */
     return new ondemand::parser{max_cap};
   }
 
@@ -136,8 +132,8 @@ extern "C" {
     ondemand::array arr;
     auto error = val.get_array().get(arr);
     if (error != SUCCESS) { return error; }
-    auto err2 = arr.begin().get(iterOut);
-    if (err2 != SUCCESS) { return err2; }
+    error = arr.begin().get(iterOut);
+    if (error != SUCCESS) { return error; }
     return arr.count_elements().get(len);
   }
 

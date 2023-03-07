@@ -1,83 +1,85 @@
 {-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Data.Hermes.Decoder.Internal
-  ( Decoder(..)
-  , DecoderPrim(..)
+  ( DecoderM(..)
+  , DecoderPrimM(..)
   , HermesEnv(..)
   , HermesException(..)
   , DocumentError(..)
+  , Path(..)
+  , Decoder(..)
+  , asks
+  , local
+  , decodeEither
+  , decodeEitherIO
+  , mkHermesEnv
+  , mkHermesEnv_
   , withHermesEnv
+  , withHermesEnv_
   , typePrefix
   , handleErrorCode
-  , withParserPointer
-  , withDocumentPointer
+  , parseByteString
+  , parseByteStringIO
   , liftIO
   , withRunInIO
   ) where
 
 import           Control.Applicative (Alternative(..))
-import           Control.DeepSeq (NFData)
-import           Control.Exception (Exception, bracket, catch, throwIO)
+import           Control.DeepSeq (NFData(..))
+import           Control.Exception (Exception, catch, throwIO, try)
 import           Control.Monad.Primitive (PrimMonad(..))
-import           Control.Monad.Reader (MonadReader, asks)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Reader (ReaderT(..))
+import qualified Data.ByteString as BS
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
 import           GHC.Generics (Generic)
+import qualified System.IO.Unsafe as Unsafe
 
-import           Data.Hermes.SIMDJSON.Bindings (getErrorMessageImpl)
+import           Data.Hermes.SIMDJSON.Bindings (getDocumentValueImpl, getErrorMessageImpl)
 import           Data.Hermes.SIMDJSON.Types
   ( Document(..)
   , Parser(..)
   , SIMDDocument
   , SIMDErrorCode(..)
   , SIMDParser
+  , Value(..)
   )
 import           Data.Hermes.SIMDJSON.Wrapper
 
--- | A Decoder is some context around the IO needed by the C FFI to allocate local memory.
+-- | DecoderM is some context around the IO needed by the C FFI to allocate local memory.
 -- Users have no access to the underlying IO, since this could allow decoders to launch nukes.
 -- Using `Data.Hermes.decodeEither` discharges the IO and returns us to purity,
 -- since we know decoding a document is referentially transparent.
-newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
-  deriving newtype
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadReader HermesEnv
-    )
+newtype DecoderM a = DecoderM { runDecoderM :: ReaderT HermesEnv IO a }
+  deriving newtype (Functor, Applicative, Monad)
 
-instance Alternative Decoder where
+instance Alternative DecoderM where
   empty = fail "Unspecified error"
   {-# INLINE (<|>) #-}
   ad <|> bd = withRunInIO $ \u -> u ad `catch` (\(_err :: HermesException) -> u bd)
 
-instance MonadFail Decoder where
+instance MonadFail DecoderM where
   {-# INLINE fail #-}
   fail = throwHermes . T.pack
 
-newtype DecoderPrim a = DecoderPrim { runDecoderPrim :: Decoder a }
-  deriving newtype
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadReader HermesEnv
-    )
+newtype DecoderPrimM a = DecoderPrimM { runDecoderPrimM :: DecoderM a }
+  deriving newtype (Functor, Applicative, Monad)
 
-instance PrimMonad DecoderPrim where
-  type PrimState DecoderPrim = PrimState (ReaderT HermesEnv IO)
-  primitive = DecoderPrim . Decoder . lift . primitive
+instance PrimMonad DecoderPrimM where
+  type PrimState DecoderPrimM = PrimState (ReaderT HermesEnv IO)
+  primitive = DecoderPrimM . DecoderM . lift . primitive
   {-# INLINE primitive #-}
 
 -- | Contains foreign references to the allocated simdjson::parser and
@@ -87,13 +89,56 @@ data HermesEnv =
   HermesEnv
     { hParser   :: !(F.ForeignPtr SIMDParser)
     , hDocument :: !(F.ForeignPtr SIMDDocument)
-    , hPath     :: !Text
-    }
+    , hPath     :: ![Path]
+    } deriving (Eq, Generic)
 
--- | Make a new HermesEnv. This allocates foreign references to
--- a simdjson::ondemand::parser and a simdjson::ondemand::document.
--- The optional capacity argument sets the max capacity in bytes for the
--- simdjson::ondemand::parser, which defaults to 4GB.
+instance NFData HermesEnv where
+  rnf HermesEnv{..} = rnf hPath `seq` ()
+
+data Path =
+    Key !Text
+  | Idx !Int
+  | Pointer !Text
+  deriving (Eq, Show, Generic)
+
+instance NFData Path
+
+newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
+
+-- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
+-- Creates simdjson instances on each decode.
+decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
+decodeEither d bs = Unsafe.unsafeDupablePerformIO . try $ decodeEitherIO d bs
+{-# NOINLINE decodeEither #-}
+
+-- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
+-- Creates simdjson instances on each decode. Runs in IO instead of discharging it.
+decodeEitherIO :: Decoder a -> BS.ByteString -> IO a
+decodeEitherIO d bs = withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
+
+-- Given a HermesEnv, decode a strict ByteString.
+parseByteString :: HermesEnv -> Decoder a -> BS.ByteString -> Either HermesException a
+parseByteString hEnv d bs = Unsafe.unsafeDupablePerformIO . try $ parseByteStringIO hEnv d bs
+{-# NOINLINE parseByteString #-}
+
+-- Given a HermesEnv, decode a strict ByteString in IO.
+parseByteStringIO :: HermesEnv -> Decoder a -> BS.ByteString -> IO a
+parseByteStringIO hEnv d bs =
+  allocaValue $ \valPtr ->
+    withInputBuffer bs $ \inputPtr -> do
+      F.withForeignPtr (hParser hEnv) $ \parserPtr ->
+        F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
+          err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
+          flip runReaderT hEnv . runDecoderM $ do
+            handleErrorCode "" err
+            runDecoder d valPtr
+
+-- | Allocates foreign references to a simdjson::ondemand::parser and a
+-- simdjson::ondemand::document. The optional capacity argument sets the max
+-- capacity in bytes for the simdjson::ondemand::parser, which defaults to 4GB.
+-- It is preferable to use `withHermesEnv` to keep foreign references in scope.
+-- Be careful using this, the foreign references can be finalized if the
+-- `HermesEnv` goes out of scope.
 mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
@@ -101,28 +146,19 @@ mkHermesEnv mCapacity = do
   pure HermesEnv
     { hParser   = parser
     , hDocument = document
-    , hPath     = ""
+    , hPath     = []
     }
 
--- | Shortcut for constructing a default `HermesEnv`.
 mkHermesEnv_ :: IO HermesEnv
 mkHermesEnv_ = mkHermesEnv Nothing
 
--- | Internal finalizer for simdjson instances.
-cleanupHermesEnv :: HermesEnv -> IO ()
-cleanupHermesEnv hEnv = do
-  F.finalizeForeignPtr (hDocument hEnv)
-  F.finalizeForeignPtr (hParser hEnv)
+withHermesEnv :: Maybe Int -> (HermesEnv -> IO a) -> IO a
+withHermesEnv mCapacity f = mkHermesEnv mCapacity >>= f
 
--- | Run an action in IO that is passed a `HermesEnv`.
-withHermesEnv :: (HermesEnv -> IO a) -> IO a
-withHermesEnv = bracket acquire release
-  where
-    acquire = mkHermesEnv_
-    release = cleanupHermesEnv
+withHermesEnv_ :: (HermesEnv -> IO a) -> IO a
+withHermesEnv_ = withHermesEnv Nothing
 
--- | The library can throw exceptions from simdjson in addition to
--- its own exceptions.
+-- | The library can throw exceptions from simdjson in addition to its own exceptions.
 data HermesException =
     SIMDException !DocumentError
     -- ^ An exception thrown from the simdjson library.
@@ -151,18 +187,33 @@ typePrefix typ = "Error while getting value of type " <> typ <> ". "
 {-# INLINE typePrefix #-}
 
 -- | Re-throw an exception caught from the simdjson library.
-throwSIMD :: Text -> Decoder a
+throwSIMD :: Text -> DecoderM a
 throwSIMD msg = do
-  pth <- asks hPath
+  pth <- formatPath <$> asks hPath
   liftIO . throwIO . SIMDException $ DocumentError pth msg
 
 -- | Throw an IO exception in the `Decoder` context.
-throwHermes :: Text -> Decoder a
+throwHermes :: Text -> DecoderM a
 throwHermes msg = do
-  pth <- asks hPath
+  pth <- formatPath <$> asks hPath
   liftIO . throwIO . InternalException $ DocumentError pth msg
 
-handleErrorCode :: Text -> F.CInt -> Decoder ()
+-- | Format path using JSON Pointer spec: https://www.rfc-editor.org/rfc/rfc6901
+formatPath :: [Path] -> Text
+formatPath dl =
+  case els of
+    [] -> ""
+    xs -> T.concat $ fmap escapeKey xs
+  where
+    els                   = reverse dl
+    escapeKey (Key txt)   = "/" <> T.concatMap escChar txt
+    escapeKey (Idx int)   = "/" <> (T.pack . show $ int)
+    escapeKey (Pointer p) = p
+    escChar '/'           = "~1"
+    escChar '~'           = "~0"
+    escChar x             = T.singleton x
+
+handleErrorCode :: Text -> F.CInt -> DecoderM ()
 handleErrorCode pre errInt = do
   let errCode = toEnum $ fromIntegral errInt
   if errCode == SUCCESS
@@ -172,26 +223,20 @@ handleErrorCode pre errInt = do
     throwSIMD $ pre <> T.pack errStr
 {-# INLINE handleErrorCode #-}
 
-withParserPointer :: (Parser -> Decoder a) -> Decoder a
-withParserPointer f =
-  asks hParser >>= \parserFPtr ->
-    withRunInIO $ \u ->
-      F.withForeignPtr parserFPtr $ u . f . Parser
-{-# INLINE withParserPointer #-}
-
-withDocumentPointer :: (Document -> Decoder a) -> Decoder a
-withDocumentPointer f =
-  asks hDocument >>= \docFPtr ->
-    withRunInIO $ \u ->
-      F.withForeignPtr docFPtr $ u . f . Document
-{-# INLINE withDocumentPointer #-}
-
-withRunInIO :: ((forall a. Decoder a -> IO a) -> IO b) -> Decoder b
+withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
 withRunInIO inner =
-  Decoder . ReaderT $ \r ->
-    inner (flip runReaderT r . runDecoder)
+  DecoderM . ReaderT $ \r ->
+    inner (flip runReaderT r . runDecoderM)
 {-# INLINE withRunInIO #-}
 
-liftIO :: IO a -> Decoder a
-liftIO = Decoder . lift
+liftIO :: IO a -> DecoderM a
+liftIO = DecoderM . lift
 {-# INLINE liftIO #-}
+
+asks :: (HermesEnv -> a) -> DecoderM a
+asks f = DecoderM . ReaderT $ pure . f
+{-# INLINE asks #-}
+
+local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
+local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
+{-# INLINE local #-}

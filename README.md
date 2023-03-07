@@ -27,11 +27,11 @@ This library exposes functions that can be used to write decoders for JSON docum
 
 With this in mind, `Data.Hermes` parsers can decode Haskell types faster than traditional `Data.Aeson.FromJSON` instances, especially in cases where you only need to decode a subset of the document. This is because `Data.Aeson.FromJSON` converts the entire document into a `Data.Aeson.Value`, which means memory usage increases linearly with the input size. The `simdjson::ondemand` API does not have this constraint because it iterates over the JSON string in memory without constructing an intermediate tree. This means decoders are truly lazy and you only pay for what you use.
 
-For another incremental JSON parser in Haskell, see [json-stream](https://hackage.haskell.org/package/json-stream).
+For an incremental JSON parser in Haskell, see [json-stream](https://hackage.haskell.org/package/json-stream).
 
 ## Usage
 
-This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the tests and benchmarks for example usage. `Decoder a` is a thin layer over IO that keeps some context around for better error messages. `simdjson::ondemand` exceptions will be caught and re-thrown with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
+This library does _not_ offer a Haskell API over the entire simdjson On Demand API. It currently binds only to what is needed for defining and running a `Decoder`. You can see the tests and benchmarks for example usage. `simdjson::ondemand` exceptions will be caught and re-thrown with enough information to troubleshoot. In the worst case you may run into a segmentation fault that is not caught, which you are encouraged to report as a bug.
 
 ### Decoders
 
@@ -39,7 +39,7 @@ This library does _not_ offer a Haskell API over the entire simdjson On Demand A
 import qualified Data.ByteString as BS
 import qualified Data.Hermes as H
 
-personDecoder :: H.Value -> H.Decoder Person
+personDecoder :: H.Decoder Person
 personDecoder = H.withObject $ \obj ->
   Person
     <$> H.atKey "_id" H.text obj
@@ -54,6 +54,14 @@ personDecoder = H.withObject $ \obj ->
 decodePersons :: BS.ByteString -> Either H.HermesException [Person]
 decodePersons = H.decodeEither $ H.list personDecoder
 ```
+### Aeson Integration
+
+While it is not recommended to use hermes if you need the full DOM, we still provide a performant interface to decode aeson `Value`s. See an example of this in the `hermes-aeson` subpackage. Ideally, you could use hermes to selectively decode aeson `Value`s on demand, for example:
+
+```haskell
+H.decodeEither (H.atPointer "/statuses/99" H.hValueToAeson) twitter
+```
+
 ### Exceptions
 
 When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call.
@@ -81,17 +89,17 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                    | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied     | Peak Memory |
 | --------------------------------------- | ------------- | ------------ | ---------- | ---------- | ----------- |
-| All.Decode.Arrays.Hermes                | 264047000000  | 13678027818  | 526893404  | 423269323  | 400556032   |
-| All.Decode.Arrays.Aeson                 | 2139468800000 | 58623441378  | 7095177224 | 2316652213 | 1238368256  |
-| All.Decode.Persons.Hermes               | 47245875000   | 3666592466   | 145187125  | 56382103   | 1238368256  |
-| All.Decode.Persons.Aeson                | 132630350000  | 13194813528  | 357269938  | 188528685  | 1238368256  |
-| All.Decode.Partial Twitter.Hermes       | 243684082     | 13326876     | 355734     | 3197       | 1238368256  |
-| All.Decode.Partial Twitter.JsonStream   | 2113555468    | 182840482    | 15259521   | 273770     | 1238368256  |
-| All.Decode.Partial Twitter.Aeson        | 4241578125    | 421778322    | 12518566   | 4638230    | 1238368256  |
-| All.Decode.Persons (Aeson Value).Hermes | 109004800000  | 6785795490   | 304707610  | 137784629  | 1238368256  |
-| All.Decode.Persons (Aeson Value).Aeson  | 118259950000  | 8690925408   | 286148908  | 177027037  | 1238368256  |
-| All.Decode.Twitter (Aeson Value).Hermes | 4192987500    | 278048064    | 12386839   | 4150484    | 1238368256  |
-| All.Decode.Twitter (Aeson Value).Aeson  | 4796893750    | 431882554    | 12519865   | 5538783    | 1238368256  |
+| All.Decode.Arrays.Hermes                | 267104550000  | 18274712758  | 503599934  | 439150544  | 541065216   |
+| All.Decode.Arrays.Aeson                 | 2205838200000 | 108871466542 | 7094759154 | 2392723275 | 1166016512  |
+| All.Decode.Persons.Hermes               | 47153700000   | 3880584170   | 144901928  | 57032737   | 1166016512  |
+| All.Decode.Persons.Aeson                | 134265700000  | 7195219536   | 357269946  | 188529734  | 1166016512  |
+| All.Decode.Partial Twitter.Hermes       | 246448046     | 20934312     | 348540     | 3088       | 1166016512  |
+| All.Decode.Partial Twitter.JsonStream   | 2105484765    | 73210262     | 15261108   | 273820     | 1166016512  |
+| All.Decode.Partial Twitter.Aeson        | 4297434375    | 139205712    | 12547656   | 4625157    | 1166016512  |
+| All.Decode.Persons (Aeson Value).Hermes | 108099550000  | 9966602188   | 303649194  | 138051155  | 1166016512  |
+| All.Decode.Persons (Aeson Value).Aeson  | 119240200000  | 9148201308   | 286148916  | 177027844  | 1166016512  |
+| All.Decode.Twitter (Aeson Value).Hermes | 4261312500    | 149205128    | 12555922   | 4151184    | 1166016512  |
+| All.Decode.Twitter (Aeson Value).Aeson  | 4832229687    | 242990712    | 12539421   | 5527422    | 1166016512  |
 |                                         |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 
@@ -100,11 +108,13 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * Use `text` >= 2.0 to benefit from its UTF-8 implementation.
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
-* Decode your object fields in order. Out of order field lookups will slightly degrade performance. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+* Decode your object fields in order. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+
+If you need to decode in tight loops or long-running processes (like a server), consider using the `withHermesEnv/mkHermesEnv` and `parseByteString` functions instead of `decodeEither`. This ensures the simdjson instances are not re-created on each decode. Please see the [simdjson performance docs](https://github.com/simdjson/simdjson/blob/master/doc/performance.md#performance-notes) for more info.
 
 ## Limitations
 
-Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it.
+Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. This library tries to prevent this as much as possible, i.e. making `Decoder Value` impossible.
 
 Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and basic well-formed checks), it is possible to parse an invalid JSON document but not realize it until later. If you need the entire document to be validated up front then a DOM parser is a better fit for you.
 

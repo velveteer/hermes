@@ -5,13 +5,12 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Key as K
 import qualified Data.Aeson.KeyMap as KM
 
-hValueToAeson :: H.Value -> H.Decoder A.Value
-hValueToAeson v = do
-  ty <- H.getType v
+hValueToAeson :: H.Decoder A.Value
+hValueToAeson = H.withType $ \ty ->
   case ty of
-    H.VArray   -> A.Array <$> H.vector hValueToAeson v
-    H.VObject  -> A.Object . KM.fromMap <$> H.objectAsMap (pure . K.fromText) hValueToAeson v
-    H.VNumber  -> A.Number <$> H.scientific v
-    H.VString  -> A.String <$> H.text v
-    H.VBoolean -> A.Bool <$> H.bool v
-    H.VNull    -> pure A.Null
+    H.VArray   -> H.withVector hValueToAeson (pure . A.Array)
+    H.VObject  -> H.withObjectAsMap (pure . K.fromText) hValueToAeson (pure . A.Object . KM.fromMap)
+    H.VNumber  -> H.withScientific (pure . A.Number)
+    H.VString  -> H.withText (pure . A.String)
+    H.VBoolean -> H.withBool (pure . A.Bool)
+    H.VNull    -> H.withNull (\isNil -> if isNil then pure A.Null else fail "expected null")

@@ -44,7 +44,7 @@ rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
     dt <- roundtrip decodePeano t
     t === dt
 
-roundtrip :: A.ToJSON a => (Value -> Decoder a) -> a -> PropertyT IO a
+roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
 roundtrip decoder =
   either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
 
@@ -55,7 +55,7 @@ instance A.ToJSON Peano where
   toJSON (Peano 0) = A.object []
   toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
 
-decodePeano :: Value -> Decoder Peano
+decodePeano :: Decoder Peano
 decodePeano = withObject $ \obj -> do
   mPeano <- atKeyOptional "suc" decodePeano obj
   pure $
@@ -163,7 +163,7 @@ data Employer =
     deriving stock (Eq, Show, Generic)
     deriving anyclass A.ToJSON
 
-decodePerson :: Value -> Decoder Person
+decodePerson :: Decoder Person
 decodePerson = withObject $ \obj ->
   Person
     <$> atKey "_id" text obj
@@ -185,7 +185,7 @@ decodePerson = withObject $ \obj ->
           (objectAsKeyValues (pure . KeyType) int) obj)
     <*> atKey "utcTimeField" utcTime obj
 
-decodePersonOptional :: Value -> Decoder PersonOptional
+decodePersonOptional :: Decoder PersonOptional
 decodePersonOptional = withObject $ \obj ->
   PersonOptional
     <$> atKeyOptional "_id" text obj
@@ -207,7 +207,7 @@ decodePersonOptional = withObject $ \obj ->
           (objectAsKeyValues (pure . KeyType) int) obj)
     <*> atKeyOptional "utcTimeField" utcTime obj
 
-decodeFriend :: Value -> Decoder Friend
+decodeFriend :: Decoder Friend
 decodeFriend = withObject $ \obj ->
   Friend
     <$> atKey "id" int obj
@@ -267,7 +267,7 @@ genEmployer = Employer
   <$> Gen.string (Range.linear 0 1000) Gen.unicode
   <*> genScientific
 
-decodeEmployer :: Value -> Decoder Employer
+decodeEmployer :: Decoder Employer
 decodeEmployer = withObject $ \obj ->
   Employer
     <$> atKey "inefficient" string obj

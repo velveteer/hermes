@@ -1,26 +1,21 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module Data.Hermes.Decoder.Path
-  ( withPath
-  , withPathIndex
-  , withPathOverride
+  ( withKey
+  , withIndex
+  , withPointer
   ) where
 
-import           Control.Monad.Reader (MonadReader, local)
 import           Data.Text (Text)
-import qualified Data.Text as T
 
-import           Data.Hermes.Decoder.Internal (HermesEnv(hPath))
+import           Data.Hermes.Decoder.Internal (DecoderM, HermesEnv(hPath), Path(..), local)
 
-withPath :: MonadReader HermesEnv m => Text -> m a -> m a
-withPath key = local $ \st -> st { hPath = hPath st <> "/" <> key }
-{-# INLINE withPath #-}
+withKey :: Text -> DecoderM a -> DecoderM a
+withKey key = local $ \st -> st { hPath = Key key : hPath st }
+{-# INLINE withKey #-}
 
-withPathOverride :: MonadReader HermesEnv m => Text -> m a -> m a
-withPathOverride path = local $ \st -> st { hPath = path }
-{-# INLINE withPathOverride #-}
+withPointer :: Text -> DecoderM a -> DecoderM a
+withPointer path = local $ \st -> st { hPath = [Pointer path] }
+{-# INLINE withPointer #-}
 
-withPathIndex :: MonadReader HermesEnv m => Int -> m a -> m a
-withPathIndex idx = local $ \st -> st { hPath = hPath st <> showInt idx }
-  where showInt i = T.cons '/' . T.pack $ show i
-{-# INLINE withPathIndex #-}
+withIndex :: Int -> DecoderM a -> DecoderM a
+withIndex idx = local $ \st -> st { hPath = Idx idx : hPath st }
+{-# INLINE withIndex #-}

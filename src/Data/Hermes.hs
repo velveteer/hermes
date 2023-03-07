@@ -1,7 +1,7 @@
 -- | Exposes functions for building JSON decoders that harness the power
 -- of the simdjson::ondemand API.
 --
--- A decoder is really a function from a `Value` to some Haskell type in the `Decoder` monad.
+-- A decoder is really a function from a simdjson `Value` to some Haskell type in the `DecoderM` monad.
 -- It looks like [Data.Aeson.parseJSON](https://hackage.haskell.org/package/aeson-2.0.2.0/docs/Data-Aeson.html#v:parseJSON), except the `Value` is opaque and can only be used
 -- when it's passed by reference across the C FFI.
 --
@@ -14,9 +14,17 @@
 module Data.Hermes
   ( -- * Decoding from ByteString input
     decodeEither
-    -- * Decoder monad
+  , decodeEitherIO
+  , parseByteString
+  , parseByteStringIO
   , Decoder(runDecoder)
-  , HermesEnv
+    -- * Decoder monad
+  , DecoderM(runDecoderM)
+  , HermesEnv(hPath, hDocument, hParser)
+  , mkHermesEnv
+  , mkHermesEnv_
+  , withHermesEnv
+  , withHermesEnv_
     -- * Object field accessors
     -- | Obtain an object using `withObject` that can be passed
     -- to these field lookup functions.
@@ -59,12 +67,17 @@ module Data.Hermes
   , isNull
   , withArray
   , withBool
-  , withDocumentValue
   , withDouble
   , withInt
+  , withNull
   , withObject
+  , withObjectAsMap
+  , withScientific
   , withString
   , withText
+  , withType
+  , withTypeM
+  , withVector
   -- * Raw ByteString access
   , withRawByteString
     -- * simdjson Opaque Types
@@ -78,25 +91,20 @@ module Data.Hermes
   , ValueType(..)
   ) where
 
-import           Control.Exception (try)
-import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
-import           Data.ByteString (ByteString)
-import qualified System.IO.Unsafe as Unsafe
-
 import           Data.Hermes.Decoder
 import           Data.Hermes.Decoder.Internal
-  ( Decoder(..)
+  ( DecoderM(runDecoderM)
+  , Decoder(runDecoder)
   , DocumentError(..)
-  , HermesEnv
+  , HermesEnv(hDocument, hParser, hPath)
   , HermesException(..)
+  , decodeEither
+  , decodeEitherIO
+  , mkHermesEnv
+  , mkHermesEnv_
+  , parseByteString
+  , parseByteStringIO
   , withHermesEnv
+  , withHermesEnv_
   )
 import           Data.Hermes.SIMDJSON.Types
-import           Data.Hermes.SIMDJSON.Wrapper (withInputBuffer)
-
--- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
-decodeEither :: (Value -> Decoder a) -> ByteString -> Either HermesException a
-decodeEither d bs =
-  Unsafe.unsafePerformIO . try .  withHermesEnv $ \hEnv ->
-    withInputBuffer bs $ \input ->
-      flip runReaderT hEnv . runDecoder $ withDocumentValue d input
