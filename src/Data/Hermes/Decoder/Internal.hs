@@ -108,9 +108,7 @@ newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
 decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
-decodeEither d bs =
-  Unsafe.unsafeDupablePerformIO . try $
-    withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
+decodeEither d bs = Unsafe.unsafeDupablePerformIO . try $ decodeEitherIO d bs
 {-# NOINLINE decodeEither #-}
 
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.

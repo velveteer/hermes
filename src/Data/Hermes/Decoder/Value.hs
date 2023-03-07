@@ -74,6 +74,7 @@ import           Data.Hermes.SIMDJSON
 -- | Decode a value at the particular JSON pointer following RFC 6901.
 -- Be careful where you use this because it rewinds the document on each
 -- successive call.
+--
 -- > decodeEither (atPointer "/statuses/99" decodeObject) input
 atPointer :: Text -> Decoder a -> Decoder a
 atPointer jptr (Decoder f) = Decoder $ \_ -> do
@@ -209,7 +210,7 @@ objectAsKeyValues
   :: (Text -> DecoderM k)
   -- ^ Parses a Text key in the DecoderM monad. JSON keys are always text.
   -> Decoder v
-  -- ^ DecoderM for the field value.
+  -- ^ Decoder for the field value.
   -> Decoder [(k, v)]
 objectAsKeyValues kf vf = withObjectIter $ iterateOverFields kf vf
 {-# INLINE objectAsKeyValues #-}
@@ -220,7 +221,7 @@ objectAsMap
   => (Text -> DecoderM k)
   -- ^ Parses a Text key in the DecoderM monad. JSON keys are always text.
   -> Decoder v
-  -- ^ DecoderM for the field value.
+  -- ^ Decoder for the field value.
   -> Decoder (Map k v)
 objectAsMap kf vf = withObjectIter $ iterateOverFieldsMap kf vf
 {-# INLINE objectAsMap #-}
@@ -230,7 +231,7 @@ withObjectAsMap
   => (Text -> DecoderM k)
   -- ^ Parses a Text key in the DecoderM monad. JSON keys are always text.
   -> Decoder v
-  -- ^ DecoderM for the field value.
+  -- ^ Decoder for the field value.
   -> (Map k v -> DecoderM a)
   -> Decoder a
 withObjectAsMap kf vf f = Decoder $ runDecoder (objectAsMap kf vf) >=> f

@@ -1,7 +1,7 @@
 -- | Exposes functions for building JSON decoders that harness the power
 -- of the simdjson::ondemand API.
 --
--- A decoder is really a function from a `Value` to some Haskell type in the `Decoder` monad.
+-- A decoder is really a function from a simdjson `Value` to some Haskell type in the `DecoderM` monad.
 -- It looks like [Data.Aeson.parseJSON](https://hackage.haskell.org/package/aeson-2.0.2.0/docs/Data-Aeson.html#v:parseJSON), except the `Value` is opaque and can only be used
 -- when it's passed by reference across the C FFI.
 --
