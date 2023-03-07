@@ -17,8 +17,9 @@ module Data.Hermes
   , decodeEitherIO
   , parseByteString
   , parseByteStringIO
-    -- * Decoder monad
   , Decoder(runDecoder)
+    -- * Decoder monad
+  , DecoderM(runDecoderM)
   , HermesEnv(hPath, hDocument, hParser)
   , mkHermesEnv
   , mkHermesEnv_
@@ -32,7 +33,7 @@ module Data.Hermes
   , atKeyStrict
     -- * Decoders
     -- ** JSON pointer
-  -- , atPointer
+  , atPointer
     -- ** Values
   , bool
   , char
@@ -66,12 +67,17 @@ module Data.Hermes
   , isNull
   , withArray
   , withBool
-  -- , withDocumentValue
   , withDouble
   , withInt
+  , withNull
   , withObject
+  , withObjectAsMap
+  , withScientific
   , withString
   , withText
+  , withType
+  , withTypeM
+  , withVector
   -- * Raw ByteString access
   , withRawByteString
     -- * simdjson Opaque Types
@@ -87,7 +93,8 @@ module Data.Hermes
 
 import           Data.Hermes.Decoder
 import           Data.Hermes.Decoder.Internal
-  ( Decoder(runDecoder)
+  ( DecoderM(runDecoderM)
+  , Decoder(runDecoder)
   , DocumentError(..)
   , HermesEnv(hDocument, hParser, hPath)
   , HermesException(..)

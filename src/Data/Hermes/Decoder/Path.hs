@@ -6,16 +6,16 @@ module Data.Hermes.Decoder.Path
 
 import           Data.Text (Text)
 
-import           Data.Hermes.Decoder.Internal (Decoder, HermesEnv(hPath), Path(..), local)
+import           Data.Hermes.Decoder.Internal (DecoderM, HermesEnv(hPath), Path(..), local)
 
-withKey :: Text -> Decoder a -> Decoder a
+withKey :: Text -> DecoderM a -> DecoderM a
 withKey key = local $ \st -> st { hPath = Key key : hPath st }
 {-# INLINE withKey #-}
 
-withPointer :: Text -> Decoder a -> Decoder a
+withPointer :: Text -> DecoderM a -> DecoderM a
 withPointer path = local $ \st -> st { hPath = [Pointer path] }
 {-# INLINE withPointer #-}
 
-withIndex :: Int -> Decoder a -> Decoder a
+withIndex :: Int -> DecoderM a -> DecoderM a
 withIndex idx = local $ \st -> st { hPath = Idx idx : hPath st }
 {-# INLINE withIndex #-}

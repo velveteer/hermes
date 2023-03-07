@@ -10,12 +10,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Data.Hermes.Decoder.Internal
-  ( Decoder(..)
-  , DecoderPrim(..)
+  ( DecoderM(..)
+  , DecoderPrimM(..)
   , HermesEnv(..)
   , HermesException(..)
   , DocumentError(..)
   , Path(..)
+  , Decoder(..)
   , asks
   , local
   , decodeEither
@@ -57,28 +58,28 @@ import           Data.Hermes.SIMDJSON.Types
   )
 import           Data.Hermes.SIMDJSON.Wrapper
 
--- | A Decoder is some context around the IO needed by the C FFI to allocate local memory.
+-- | DecoderM is some context around the IO needed by the C FFI to allocate local memory.
 -- Users have no access to the underlying IO, since this could allow decoders to launch nukes.
 -- Using `Data.Hermes.decodeEither` discharges the IO and returns us to purity,
 -- since we know decoding a document is referentially transparent.
-newtype Decoder a = Decoder { runDecoder :: ReaderT HermesEnv IO a }
+newtype DecoderM a = DecoderM { runDecoderM :: ReaderT HermesEnv IO a }
   deriving newtype (Functor, Applicative, Monad)
 
-instance Alternative Decoder where
+instance Alternative DecoderM where
   empty = fail "Unspecified error"
   {-# INLINE (<|>) #-}
   ad <|> bd = withRunInIO $ \u -> u ad `catch` (\(_err :: HermesException) -> u bd)
 
-instance MonadFail Decoder where
+instance MonadFail DecoderM where
   {-# INLINE fail #-}
   fail = throwHermes . T.pack
 
-newtype DecoderPrim a = DecoderPrim { runDecoderPrim :: Decoder a }
+newtype DecoderPrimM a = DecoderPrimM { runDecoderPrimM :: DecoderM a }
   deriving newtype (Functor, Applicative, Monad)
 
-instance PrimMonad DecoderPrim where
-  type PrimState DecoderPrim = PrimState (ReaderT HermesEnv IO)
-  primitive = DecoderPrim . Decoder . lift . primitive
+instance PrimMonad DecoderPrimM where
+  type PrimState DecoderPrimM = PrimState (ReaderT HermesEnv IO)
+  primitive = DecoderPrimM . DecoderM . lift . primitive
   {-# INLINE primitive #-}
 
 -- | Contains foreign references to the allocated simdjson::parser and
@@ -102,9 +103,11 @@ data Path =
 
 instance NFData Path
 
+newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
+
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
-decodeEither :: (Value -> Decoder a) -> BS.ByteString -> Either HermesException a
+decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
 decodeEither d bs =
   Unsafe.unsafeDupablePerformIO . try $
     withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
@@ -112,25 +115,25 @@ decodeEither d bs =
 
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode. Runs in IO instead of discharging it.
-decodeEitherIO :: (Value -> Decoder a) -> BS.ByteString -> IO a
+decodeEitherIO :: Decoder a -> BS.ByteString -> IO a
 decodeEitherIO d bs = withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
 
 -- Given a HermesEnv, decode a strict ByteString.
-parseByteString :: HermesEnv -> (Value -> Decoder a) -> BS.ByteString -> Either HermesException a
+parseByteString :: HermesEnv -> Decoder a -> BS.ByteString -> Either HermesException a
 parseByteString hEnv d bs = Unsafe.unsafeDupablePerformIO . try $ parseByteStringIO hEnv d bs
 {-# NOINLINE parseByteString #-}
 
 -- Given a HermesEnv, decode a strict ByteString in IO.
-parseByteStringIO :: HermesEnv -> (Value -> Decoder a) -> BS.ByteString -> IO a
+parseByteStringIO :: HermesEnv -> Decoder a -> BS.ByteString -> IO a
 parseByteStringIO hEnv d bs =
   allocaValue $ \valPtr ->
     withInputBuffer bs $ \inputPtr -> do
       F.withForeignPtr (hParser hEnv) $ \parserPtr ->
         F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
           err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
-          flip runReaderT hEnv . runDecoder $ do
+          flip runReaderT hEnv . runDecoderM $ do
             handleErrorCode "" err
-            d valPtr
+            runDecoder d valPtr
 
 -- | Allocates foreign references to a simdjson::ondemand::parser and a
 -- simdjson::ondemand::document. The optional capacity argument sets the max
@@ -186,13 +189,13 @@ typePrefix typ = "Error while getting value of type " <> typ <> ". "
 {-# INLINE typePrefix #-}
 
 -- | Re-throw an exception caught from the simdjson library.
-throwSIMD :: Text -> Decoder a
+throwSIMD :: Text -> DecoderM a
 throwSIMD msg = do
   pth <- formatPath <$> asks hPath
   liftIO . throwIO . SIMDException $ DocumentError pth msg
 
 -- | Throw an IO exception in the `Decoder` context.
-throwHermes :: Text -> Decoder a
+throwHermes :: Text -> DecoderM a
 throwHermes msg = do
   pth <- formatPath <$> asks hPath
   liftIO . throwIO . InternalException $ DocumentError pth msg
@@ -212,7 +215,7 @@ formatPath dl =
     escChar '~'           = "~0"
     escChar x             = T.singleton x
 
-handleErrorCode :: Text -> F.CInt -> Decoder ()
+handleErrorCode :: Text -> F.CInt -> DecoderM ()
 handleErrorCode pre errInt = do
   let errCode = toEnum $ fromIntegral errInt
   if errCode == SUCCESS
@@ -222,20 +225,20 @@ handleErrorCode pre errInt = do
     throwSIMD $ pre <> T.pack errStr
 {-# INLINE handleErrorCode #-}
 
-withRunInIO :: ((forall a. Decoder a -> IO a) -> IO b) -> Decoder b
+withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
 withRunInIO inner =
-  Decoder . ReaderT $ \r ->
-    inner (flip runReaderT r . runDecoder)
+  DecoderM . ReaderT $ \r ->
+    inner (flip runReaderT r . runDecoderM)
 {-# INLINE withRunInIO #-}
 
-liftIO :: IO a -> Decoder a
-liftIO = Decoder . lift
+liftIO :: IO a -> DecoderM a
+liftIO = DecoderM . lift
 {-# INLINE liftIO #-}
 
-asks :: (HermesEnv -> a) -> Decoder a
-asks f = Decoder . ReaderT $ pure . f
+asks :: (HermesEnv -> a) -> DecoderM a
+asks f = DecoderM . ReaderT $ pure . f
 {-# INLINE asks #-}
 
-local :: (HermesEnv -> HermesEnv) -> Decoder a -> Decoder a
-local f (Decoder m) = Decoder . ReaderT $ runReaderT m . f
+local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
+local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
 {-# INLINE local #-}
