@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -17,28 +18,43 @@ module Data.Hermes.Decoder.Internal
   , Path(..)
   , asks
   , local
+  , decodeEither
+  , decodeEitherIO
+  , mkHermesEnv
+  , mkHermesEnv_
   , withHermesEnv
   , withHermesEnv_
   , typePrefix
   , handleErrorCode
+  , parseByteString
+  , parseByteStringIO
   , liftIO
   , withRunInIO
   ) where
 
 import           Control.Applicative (Alternative(..))
-import           Control.DeepSeq (NFData)
-import           Control.Exception (Exception, catch, throwIO)
+import           Control.DeepSeq (NFData(..))
+import           Control.Exception (Exception, catch, throwIO, try)
 import           Control.Monad.Primitive (PrimMonad(..))
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Reader (ReaderT(..))
+import qualified Data.ByteString as BS
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
 import           GHC.Generics (Generic)
+import qualified System.IO.Unsafe as Unsafe
 
-import           Data.Hermes.SIMDJSON.Bindings (getErrorMessageImpl)
-import           Data.Hermes.SIMDJSON.Types (Document(..), Parser(..), SIMDErrorCode(..))
+import           Data.Hermes.SIMDJSON.Bindings (getDocumentValueImpl, getErrorMessageImpl)
+import           Data.Hermes.SIMDJSON.Types
+  ( Document(..)
+  , Parser(..)
+  , SIMDDocument
+  , SIMDErrorCode(..)
+  , SIMDParser
+  , Value(..)
+  )
 import           Data.Hermes.SIMDJSON.Wrapper
 
 -- | A Decoder is some context around the IO needed by the C FFI to allocate local memory.
@@ -70,33 +86,78 @@ instance PrimMonad DecoderPrim where
 -- when an object field or array value is entered.
 data HermesEnv =
   HermesEnv
-    { hParser   :: !Parser
-    , hDocument :: !Document
+    { hParser   :: !(F.ForeignPtr SIMDParser)
+    , hDocument :: !(F.ForeignPtr SIMDDocument)
     , hPath     :: ![Path]
-    }
+    } deriving (Eq, Generic)
 
-data Path = Key !Text | Idx !Int | Pointer !Text
+instance NFData HermesEnv where
+  rnf HermesEnv{..} = rnf hPath `seq` ()
 
-withHermesEnv_ :: (HermesEnv -> IO a) -> IO a
-withHermesEnv_ = withHermesEnv Nothing
+data Path =
+    Key !Text
+  | Idx !Int
+  | Pointer !Text
+  deriving (Eq, Show, Generic)
+
+instance NFData Path
+
+-- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
+-- Creates simdjson instances on each decode.
+decodeEither :: (Value -> Decoder a) -> BS.ByteString -> Either HermesException a
+decodeEither d bs =
+  Unsafe.unsafeDupablePerformIO . try $
+    withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
+{-# NOINLINE decodeEither #-}
+
+-- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
+-- Creates simdjson instances on each decode. Runs in IO instead of discharging it.
+decodeEitherIO :: (Value -> Decoder a) -> BS.ByteString -> IO a
+decodeEitherIO d bs = withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
+
+-- Given a HermesEnv, decode a strict ByteString.
+parseByteString :: HermesEnv -> (Value -> Decoder a) -> BS.ByteString -> Either HermesException a
+parseByteString hEnv d bs = Unsafe.unsafeDupablePerformIO . try $ parseByteStringIO hEnv d bs
+{-# NOINLINE parseByteString #-}
+
+-- Given a HermesEnv, decode a strict ByteString in IO.
+parseByteStringIO :: HermesEnv -> (Value -> Decoder a) -> BS.ByteString -> IO a
+parseByteStringIO hEnv d bs =
+  allocaValue $ \valPtr ->
+    withInputBuffer bs $ \inputPtr -> do
+      F.withForeignPtr (hParser hEnv) $ \parserPtr ->
+        F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
+          err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
+          flip runReaderT hEnv . runDecoder $ do
+            handleErrorCode "" err
+            d valPtr
 
 -- | Allocates foreign references to a simdjson::ondemand::parser and a
 -- simdjson::ondemand::document. The optional capacity argument sets the max
 -- capacity in bytes for the simdjson::ondemand::parser, which defaults to 4GB.
-withHermesEnv :: Maybe Int -> (HermesEnv -> IO a) -> IO a
-withHermesEnv mCapacity f = do
+-- It is preferable to use `withHermesEnv` to keep foreign references in scope.
+-- Be careful using this, the foreign references can be finalized if the
+-- `HermesEnv` goes out of scope.
+mkHermesEnv :: Maybe Int -> IO HermesEnv
+mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
-  F.withForeignPtr parser $ \p ->
-    F.withForeignPtr document $ \d ->
-      f $ HermesEnv
-        { hParser   = Parser p
-        , hDocument = Document d
-        , hPath     = []
-        }
+  pure HermesEnv
+    { hParser   = parser
+    , hDocument = document
+    , hPath     = []
+    }
 
--- | The library can throw exceptions from simdjson in addition to
--- its own exceptions.
+mkHermesEnv_ :: IO HermesEnv
+mkHermesEnv_ = mkHermesEnv Nothing
+
+withHermesEnv :: Maybe Int -> (HermesEnv -> IO a) -> IO a
+withHermesEnv mCapacity f = mkHermesEnv mCapacity >>= f
+
+withHermesEnv_ :: (HermesEnv -> IO a) -> IO a
+withHermesEnv_ = withHermesEnv Nothing
+
+-- | The library can throw exceptions from simdjson in addition to its own exceptions.
 data HermesException =
     SIMDException !DocumentError
     -- ^ An exception thrown from the simdjson library.

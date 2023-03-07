@@ -100,11 +100,13 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * Use `text` >= 2.0 to benefit from its UTF-8 implementation.
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
-* Decode your object fields in order. Out of order field lookups will slightly degrade performance. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+* Decode your object fields in order. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+
+If you need to decode in tight loops or long-running processes (like a server), consider using the `withHermesEnv` and `parseByteString` functions instead of `decodeEither`. This ensures the simdjson instances are not re-created on each decode. Please see the [simdjson performance docs](https://github.com/simdjson/simdjson/blob/master/doc/performance.md#performance-notes) for more info.
 
 ## Limitations
 
-Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it.
+Because the On Demand API uses a forward-only iterator (except for object fields), you must be mindful to not access values out of order. In other words, you should not hold onto a `Value` to parse later since the iterator may have already moved beyond it. In other words, try your best to avoid creating `Decoder Value` -- the `Value` should always be consumed and not passed around.
 
 Because the On Demand API does not validate the entire document upon creating the iterator (besides UTF-8 validation and basic well-formed checks), it is possible to parse an invalid JSON document but not realize it until later. If you need the entire document to be validated up front then a DOM parser is a better fit for you.
 

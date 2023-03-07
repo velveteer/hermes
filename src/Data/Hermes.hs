@@ -14,9 +14,16 @@
 module Data.Hermes
   ( -- * Decoding from ByteString input
     decodeEither
+  , decodeEitherIO
+  , parseByteString
+  , parseByteStringIO
     -- * Decoder monad
   , Decoder(runDecoder)
-  , HermesEnv
+  , HermesEnv(hPath, hDocument, hParser)
+  , mkHermesEnv
+  , mkHermesEnv_
+  , withHermesEnv
+  , withHermesEnv_
     -- * Object field accessors
     -- | Obtain an object using `withObject` that can be passed
     -- to these field lookup functions.
@@ -25,7 +32,7 @@ module Data.Hermes
   , atKeyStrict
     -- * Decoders
     -- ** JSON pointer
-  , atPointer
+  -- , atPointer
     -- ** Values
   , bool
   , char
@@ -59,7 +66,7 @@ module Data.Hermes
   , isNull
   , withArray
   , withBool
-  , withDocumentValue
+  -- , withDocumentValue
   , withDouble
   , withInt
   , withObject
@@ -78,25 +85,19 @@ module Data.Hermes
   , ValueType(..)
   ) where
 
-import           Control.Exception (try)
-import           Control.Monad.Trans.Reader (ReaderT(..), runReaderT)
-import           Data.ByteString (ByteString)
-import qualified System.IO.Unsafe as Unsafe
-
 import           Data.Hermes.Decoder
 import           Data.Hermes.Decoder.Internal
-  ( Decoder(..)
+  ( Decoder(runDecoder)
   , DocumentError(..)
-  , HermesEnv
+  , HermesEnv(hDocument, hParser, hPath)
   , HermesException(..)
+  , decodeEither
+  , decodeEitherIO
+  , mkHermesEnv
+  , mkHermesEnv_
+  , parseByteString
+  , parseByteStringIO
+  , withHermesEnv
   , withHermesEnv_
   )
 import           Data.Hermes.SIMDJSON.Types
-import           Data.Hermes.SIMDJSON.Wrapper (withInputBuffer)
-
--- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
-decodeEither :: (Value -> Decoder a) -> ByteString -> Either HermesException a
-decodeEither d bs =
-  Unsafe.unsafePerformIO . try .  withHermesEnv_ $ \hEnv ->
-    withInputBuffer bs $ \input ->
-      flip runReaderT hEnv . runDecoder $ withDocumentValue d input

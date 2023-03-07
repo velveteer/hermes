@@ -27,7 +27,6 @@ module Data.Hermes.Decoder.Value
   , vector
   , withArray
   , withBool
-  , withDocumentValue
   , withDouble
   , withInt
   , withObject
@@ -56,6 +55,7 @@ import qualified Foreign.Ptr as F
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
 import qualified Foreign.C.String as F
+import qualified Foreign.ForeignPtr as F
 import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Marshal.Array as F
 import qualified Foreign.Marshal.Utils as F
@@ -65,32 +65,19 @@ import           Data.Hermes.Decoder.Internal
 import           Data.Hermes.Decoder.Path
 import           Data.Hermes.SIMDJSON
 
--- | Parse the given input into a document iterator, get its Value, which is
--- either a JSON object or an array, and run the given action on that Value.
-withDocumentValue :: (Value -> Decoder a) -> InputBuffer -> Decoder a
-withDocumentValue f inputPtr = do
-  parPtr <- asks hParser
-  docPtr <- asks hDocument
-  withRunInIO $ \run ->
-    allocaValue $ \valPtr -> do
-      err <- getDocumentValueImpl parPtr inputPtr docPtr valPtr
-      run $ do
-        handleErrorCode "" err
-        f valPtr
-{-# INLINE withDocumentValue #-}
-
 -- | Decode a value at the particular JSON pointer following RFC 6901.
 -- Be careful where you use this because it rewinds the document on each
 -- successive call.
 atPointer :: Text -> (Value -> Decoder a) -> Decoder a
 atPointer jptr f = do
-  docPtr <- asks hDocument
+  doc <- asks hDocument
   withRunInIO $ \run ->
-    Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 jptr) $ \(cstr, len) ->
-      allocaValue $ \vPtr -> run . withPointer jptr $ do
-        err <- liftIO $ atPointerImpl cstr len docPtr vPtr
-        handleErrorCode "" err
-        f vPtr
+    F.withForeignPtr doc $ \docPtr ->
+      Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 jptr) $ \(cstr, len) ->
+        allocaValue $ \vPtr -> run . withPointer jptr $ do
+          err <- liftIO $ atPointerImpl cstr len (Document docPtr) vPtr
+          handleErrorCode "" err
+          f vPtr
 
 -- | Helper to work with an Object parsed from a Value.
 withObject :: (Object -> Decoder a) -> Value -> Decoder a
