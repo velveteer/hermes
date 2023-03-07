@@ -59,7 +59,8 @@ decodePersons = H.decodeEither $ H.list personDecoder
 While it is not recommended to use hermes if you need the full DOM, we still provide a performant interface to decode aeson `Value`s. See an example of this in the `hermes-aeson` subpackage. Ideally, you could use hermes to selectively decode aeson `Value`s on demand, for example:
 
 ```haskell
-H.decodeEither (H.atPointer "/statuses/99" H.hValueToAeson) twitter
+> H.decodeEither (H.atPointer "/statuses/99/user/screen_name" H.hValueToAeson) twitter
+Right (String "2no38mae")
 ```
 
 ### Exceptions
@@ -67,7 +68,7 @@ H.decodeEither (H.atPointer "/statuses/99" H.hValueToAeson) twitter
 When decoding fails for a known reason, you will get a `Left HermesException` indicating if the error came from `simdjson` or from an internal `hermes` call.
 
 ```haskell
-*Main> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }"
+> decodeEither (withObject . atKey "hello" $ list text) "{ \"hello\": [\"world\", false] }"
 Left (SIMDException (DocumentError {path = "/hello/1", errorMsg = "Error while getting value of type text. The JSON element does not have the requested type."))
 ```
 
@@ -81,7 +82,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 ### Specs
 
 * GHC 9.4.4
-* aeson-2.1.2.1 with text-2.0.2
+* aeson-2.1.2.1 (using `Data.Aeson.Decoding`) with text-2.0.2
 * Apple M1 Pro
 
 ![](https://raw.githubusercontent.com/velveteer/hermes/master/hermes-bench/bench.svg)
