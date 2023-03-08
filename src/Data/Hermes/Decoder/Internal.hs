@@ -123,6 +123,16 @@ instance Monad Decoder where
     x <- d val
     runDecoder (f x) val
 
+instance Alternative Decoder where
+  {-# INLINE (<|>) #-}
+  (Decoder a) <|> (Decoder b) = Decoder $ \val -> a val <|> b val
+  {-# INLINE empty #-}
+  empty = Decoder $ const empty
+
+instance MonadFail Decoder where
+  {-# INLINE fail #-}
+  fail e = Decoder $ \_ -> fail e
+
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
 decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
