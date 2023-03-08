@@ -105,6 +105,24 @@ instance NFData Path
 
 newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
 
+instance Functor Decoder where
+  {-# INLINE fmap #-}
+  fmap f d = Decoder $ \val -> f <$> runDecoder d val
+
+instance Applicative Decoder where
+  {-# INLINE pure #-}
+  pure a = Decoder $ \_ -> pure a
+  {-# INLINE (<*>) #-}
+  (Decoder f) <*> (Decoder e) = Decoder $ \val -> f val <*> e val
+
+instance Monad Decoder where
+  {-# INLINE return #-}
+  return = pure
+  {-# INLINE (>>=) #-}
+  (Decoder d) >>= f = Decoder $ \val -> do
+    x <- d val
+    runDecoder (f x) val
+
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
 decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
