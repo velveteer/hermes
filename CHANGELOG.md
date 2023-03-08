@@ -1,5 +1,17 @@
 # Revision history for hermes-json
 
+## 0.4.0.0 -- 2023-03-07
+
+* Update simdjson to 3.1.3
+* Add `containers`, `primitive` and `vector` dependencies
+* Add example of decoding `Data.Aeson.Value` in `hermes-aeson`
+* Remove debug string and document location in errors
+* Fix JSON pointer formatting
+* Fix incorrect path in errors from `atPointer`
+* Refactor `Decoder` to prevent passing opaque `Value`s
+* Add general performance improvements
+* Update benchmarks
+
 ## 0.3.0.0 -- 2023-03-01
 
 * Remove MonadIO and MonadUnliftIO instances for `Decoder`
