@@ -77,12 +77,12 @@ import           Data.Hermes.SIMDJSON
 --
 -- > decodeEither (atPointer "/statuses/99" decodeObject) input
 atPointer :: Text -> Decoder a -> Decoder a
-atPointer jptr (Decoder f) = Decoder $ \vPtr -> do
+atPointer jptr (Decoder f) = Decoder $ \_ -> do
   doc <- asks hDocument
   withRunInIO $ \run ->
     F.withForeignPtr doc $ \docPtr ->
       Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 jptr) $ \(cstr, len) ->
-        run . withPointer jptr $ do
+        allocaValue $ \vPtr -> run . withPointer jptr $ do
           err <- liftIO $ atPointerImpl cstr len (Document docPtr) vPtr
           handleErrorCode "" err
           f vPtr
@@ -176,19 +176,19 @@ withArray f = Decoder $ \val ->
 -- | Find an object field by key, where an exception is thrown
 -- if the key is missing.
 atKey :: Text -> Decoder a -> Object -> Decoder a
-atKey key parser obj = withUnorderedField parser obj key
+atKey key parser obj = Decoder . const $ withUnorderedField parser obj key
 {-# INLINE atKey #-}
 
 -- | Find an object field by key, where Nothing is returned
 -- if the key is missing.
 atKeyOptional :: Text -> Decoder a -> Object -> Decoder (Maybe a)
-atKeyOptional key parser obj = withUnorderedOptionalField parser obj key
+atKeyOptional key parser obj = Decoder . const $ withUnorderedOptionalField parser obj key
 {-# INLINE atKeyOptional #-}
 
 -- | Uses find_field, which means if you access a field out-of-order
 -- this will throw an exception. It also cannot support optional fields.
 atKeyStrict :: Text -> Decoder a -> Object -> Decoder a
-atKeyStrict key parser obj = withField parser obj key
+atKeyStrict key parser obj = Decoder . const $ withField parser obj key
 {-# INLINE atKeyStrict #-}
 
 -- | Parse a homogenous JSON array into a Haskell list.
@@ -477,21 +477,21 @@ iterateOverFields fk fv iterPtr =
           pure $ DList.toList acc
 {-# INLINE iterateOverFields #-}
 
-withUnorderedField :: Decoder a -> Object -> Text -> Decoder a
-withUnorderedField f objPtr key = Decoder $ \vPtr ->
+withUnorderedField :: Decoder a -> Object -> Text -> DecoderM a
+withUnorderedField f objPtr key =
   withRunInIO $ \run ->
     Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) ->
-      run $ withKey key $ do
+      allocaValue $ \vPtr -> run $ withKey key $ do
         err <- liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr
         handleErrorCode "" err
         runDecoder f vPtr
 {-# INLINE withUnorderedField #-}
 
-withUnorderedOptionalField :: Decoder a -> Object -> Text -> Decoder (Maybe a)
-withUnorderedOptionalField f objPtr key = Decoder $ \vPtr ->
+withUnorderedOptionalField :: Decoder a -> Object -> Text -> DecoderM (Maybe a)
+withUnorderedOptionalField f objPtr key =
   withRunInIO $ \run ->
     Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) ->
-      run $ withKey key $ do
+      allocaValue $ \vPtr -> run $ withKey key $ do
         err <- liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr
         let errCode = toEnum $ fromIntegral err
         if | errCode == SUCCESS       -> Just <$> runDecoder f vPtr
@@ -499,11 +499,11 @@ withUnorderedOptionalField f objPtr key = Decoder $ \vPtr ->
            | otherwise                -> Nothing <$ handleErrorCode "" err
 {-# INLINE withUnorderedOptionalField #-}
 
-withField :: Decoder a -> Object -> Text -> Decoder a
-withField f objPtr key = Decoder $ \val ->
+withField :: Decoder a -> Object -> Text -> DecoderM a
+withField f objPtr key =
   withRunInIO $ \run ->
     Unsafe.unsafeUseAsCStringLen (T.encodeUtf8 key) $ \(cstr, len) ->
-      run $ withKey key $ do
+      allocaValue $ \val -> run $ withKey key $ do
         err <- liftIO $ findFieldImpl objPtr cstr len val
         handleErrorCode "" err
         runDecoder f val
