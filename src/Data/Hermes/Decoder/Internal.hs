@@ -167,6 +167,8 @@ parseByteStringIO hEnv d bs =
 -- It is preferable to use `withHermesEnv` to keep foreign references in scope.
 -- Be careful using this, the foreign references can be finalized if the
 -- `HermesEnv` goes out of scope.
+--
+-- Do _not_ share a `HermesEnv` across multiple threads. Each thread should get its own.
 mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity

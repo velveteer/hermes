@@ -69,7 +69,6 @@ module Data.Hermes
   , withBool
   , withDouble
   , withInt
-  , withNull
   , withObject
   , withObjectAsMap
   , withScientific

@@ -30,7 +30,6 @@ module Data.Hermes.Decoder.Value
   , withBool
   , withDouble
   , withInt
-  , withNull
   , withObject
   , withObjectAsMap
   , withRawByteString
@@ -245,14 +244,6 @@ nullable parser = Decoder $ \val -> do
     then pure Nothing
     else Just <$> runDecoder parser val
 {-# INLINE nullable #-}
-
-withNull :: (Bool -> Decoder a) -> Decoder a
-withNull f = Decoder $ \val -> do
-  nil <- runDecoder isNull val
-  if nil
-    then runDecoder (f True) val
-    else runDecoder (f False) val
-{-# INLINE withNull #-}
 
 -- | Parse only a single character.
 char :: Decoder Char
