@@ -1,5 +1,12 @@
 # Revision history for hermes-json
 
+## 0.5.0.0 -- 2023-03-08
+
+* Convert `DecoderM` callbacks to `Decoder`. This is a breaking change.
+* Add useful instances for the `Decoder` monad
+* Remove some redundant functions
+* Adjust `vector` bounds
+
 ## 0.4.0.0 -- 2023-03-07
 
 * Update simdjson to 3.1.3
