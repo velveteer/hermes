@@ -76,7 +76,6 @@ module Data.Hermes
   , withString
   , withText
   , withType
-  , withTypeM
   , withVector
   -- * Raw ByteString access
   , withRawByteString

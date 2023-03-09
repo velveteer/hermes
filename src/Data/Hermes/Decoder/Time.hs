@@ -19,11 +19,11 @@ import qualified Data.Time.Calendar.Month.Compat as Time
 import qualified Data.Time.Calendar.Quarter.Compat as Time
 import qualified Data.Time.LocalTime as Local
 
-import           Data.Hermes.Decoder.Internal (DecoderM, Decoder(..))
+import           Data.Hermes.Decoder.Internal (Decoder(..))
 import           Data.Hermes.Decoder.Value (withText)
 
 -- | Run an attoparsec text parser as a hermes decoder.
-runAttoDate :: AT.Parser a -> Text -> DecoderM a
+runAttoDate :: AT.Parser a -> Text -> Decoder a
 runAttoDate p t =
   case AT.parseOnly (p <* AT.endOfInput) t of
     Left err -> fail $ "Could not parse date: " <> err
