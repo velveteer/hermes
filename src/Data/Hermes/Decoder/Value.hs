@@ -18,6 +18,7 @@ module Data.Hermes.Decoder.Value
   , nullable
   , objectAsKeyValues
   , objectAsMap
+  , parseScientific
   , scientific
   , string
   , text
@@ -99,28 +100,28 @@ withObject f = Decoder $ \valPtr ->
 {-# INLINE withObject #-}
 
 -- | Helper to work with an Int parsed from a Value.
-withInt :: (Int -> DecoderM a) -> Decoder a
-withInt f = Decoder $ getInt >=> f
+withInt :: (Int -> Decoder a) -> Decoder a
+withInt f = Decoder $ \val -> getInt val >>= \i -> runDecoder (f i) val
 {-# INLINE withInt #-}
 
 -- | Helper to work with a Double parsed from a Value.
-withDouble :: (Double -> DecoderM a) -> Decoder a
-withDouble f = Decoder $ getDouble >=> f
+withDouble :: (Double -> Decoder a) -> Decoder a
+withDouble f = Decoder $ \val -> getDouble val >>= \d -> runDecoder (f d) val
 {-# INLINE withDouble #-}
 
 -- | Helper to work with a Bool parsed from a Value.
-withBool :: (Bool -> DecoderM a) -> Decoder a
-withBool f = Decoder $ getBool >=> f
+withBool :: (Bool -> Decoder a) -> Decoder a
+withBool f = Decoder $ \val -> getBool val >>= \b -> runDecoder (f b) val
 {-# INLINE withBool #-}
 
 -- | Helper to work with the raw ByteString of the JSON token parsed from the given Value.
-withRawByteString :: (BS.ByteString -> DecoderM a) -> Decoder a
-withRawByteString f = Decoder $ getRawByteString >=> f
+withRawByteString :: (BS.ByteString -> Decoder a) -> Decoder a
+withRawByteString f = Decoder $ \val -> getRawByteString val >>= \b -> runDecoder (f b) val
 {-# INLINE withRawByteString #-}
 
 -- | Helper to work with a String parsed from a Value.
-withString :: (String -> DecoderM a) -> Decoder a
-withString f = Decoder $ getString >=> f
+withString :: (String -> Decoder a) -> Decoder a
+withString f = Decoder $ \val -> getString val >>= \s -> runDecoder (f s) val
 {-# INLINE withString #-}
 
 -- | Helper to work with a Text parsed from a Value.
@@ -315,6 +316,14 @@ getType =
 withType :: (ValueType -> Decoder a) -> Decoder a
 withType f = Decoder $ \val -> runDecoder getType val >>= \ty -> runDecoder (f ty) val
 {-# INLINE withType #-}
+
+-- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
+parseScientific :: BS.ByteString -> Decoder Sci.Scientific
+parseScientific
+  = either (\err -> fail $ "Failed to parse Scientific: " <> err) pure
+  . A.parseOnly (AC.scientific <* A.endOfInput)
+  . BSC.strip
+{-# INLINE parseScientific #-}
 
 -- Internal Functions
 
@@ -517,14 +526,6 @@ getDouble valPtr =
       handleErrorCode (typePrefix "double") err
       liftIO $ F.peek ptr
 {-# INLINE getDouble #-}
-
--- | Parse a Scientific using attoparsec's ByteString.Char8 parser.
-parseScientific :: BS.ByteString -> DecoderM Sci.Scientific
-parseScientific
-  = either (\err -> fail $ "Failed to parse Scientific: " <> err) pure
-  . A.parseOnly (AC.scientific <* A.endOfInput)
-  . BSC.strip
-{-# INLINE parseScientific #-}
 
 getBool :: Value -> DecoderM Bool
 getBool valPtr =
