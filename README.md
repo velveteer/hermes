@@ -90,17 +90,17 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                    | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied     | Peak Memory |
 | --------------------------------------- | ------------- | ------------ | ---------- | ---------- | ----------- |
-| All.Decode.Arrays.Hermes                | 267104550000  | 18274712758  | 503599934  | 439150544  | 541065216   |
-| All.Decode.Arrays.Aeson                 | 2205838200000 | 108871466542 | 7094759154 | 2392723275 | 1166016512  |
-| All.Decode.Persons.Hermes               | 47153700000   | 3880584170   | 144901928  | 57032737   | 1166016512  |
-| All.Decode.Persons.Aeson                | 134265700000  | 7195219536   | 357269946  | 188529734  | 1166016512  |
-| All.Decode.Partial Twitter.Hermes       | 246448046     | 20934312     | 348540     | 3088       | 1166016512  |
-| All.Decode.Partial Twitter.JsonStream   | 2105484765    | 73210262     | 15261108   | 273820     | 1166016512  |
-| All.Decode.Partial Twitter.Aeson        | 4297434375    | 139205712    | 12547656   | 4625157    | 1166016512  |
-| All.Decode.Persons (Aeson Value).Hermes | 108099550000  | 9966602188   | 303649194  | 138051155  | 1166016512  |
-| All.Decode.Persons (Aeson Value).Aeson  | 119240200000  | 9148201308   | 286148916  | 177027844  | 1166016512  |
-| All.Decode.Twitter (Aeson Value).Hermes | 4261312500    | 149205128    | 12555922   | 4151184    | 1166016512  |
-| All.Decode.Twitter (Aeson Value).Aeson  | 4832229687    | 242990712    | 12539421   | 5527422    | 1166016512  |
+| All.Decode.Arrays.Hermes                | 267914650000  | 10610366160  | 503599934  | 439150544  | 541065216   |
+| All.Decode.Arrays.Aeson                 | 2214928800000 | 160279563772 | 7094759111 | 2392723388 | 1166016512  |
+| All.Decode.Persons.Hermes               | 47338175000   | 4290343628   | 144901928  | 57032737   | 1166016512  |
+| All.Decode.Persons.Aeson                | 132864400000  | 9509102680   | 357269946  | 188529742  | 1166016512  |
+| All.Decode.Partial Twitter.Hermes       | 241083593     | 13856196     | 348540     | 3088       | 1166016512  |
+| All.Decode.Partial Twitter.JsonStream   | 2116192187    | 158907568    | 15259526   | 273821     | 1166016512  |
+| All.Decode.Partial Twitter.Aeson        | 4254060937    | 262619196    | 12538003   | 4634594    | 1166016512  |
+| All.Decode.Persons (Aeson Value).Hermes | 106420425000  | 3747538126   | 303886293  | 135388183  | 1166016512  |
+| All.Decode.Persons (Aeson Value).Aeson  | 119489550000  | 9713032080   | 286148916  | 177027852  | 1166016512  |
+| All.Decode.Twitter (Aeson Value).Hermes | 4164246875    | 240020934    | 12368752   | 4149211    | 1166016512  |
+| All.Decode.Twitter (Aeson Value).Aeson  | 4810817187    | 345165042    | 12539421   | 5527424    | 1166016512  |
 |                                         |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 

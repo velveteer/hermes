@@ -69,14 +69,12 @@ module Data.Hermes
   , withBool
   , withDouble
   , withInt
-  , withNull
   , withObject
   , withObjectAsMap
   , withScientific
   , withString
   , withText
   , withType
-  , withTypeM
   , withVector
   -- * Raw ByteString access
   , withRawByteString

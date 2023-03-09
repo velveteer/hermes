@@ -105,6 +105,34 @@ instance NFData Path
 
 newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
 
+instance Functor Decoder where
+  {-# INLINE fmap #-}
+  fmap f d = Decoder $ \val -> f <$> runDecoder d val
+
+instance Applicative Decoder where
+  {-# INLINE pure #-}
+  pure a = Decoder $ \_ -> pure a
+  {-# INLINE (<*>) #-}
+  (Decoder f) <*> (Decoder e) = Decoder $ \val -> f val <*> e val
+
+instance Monad Decoder where
+  {-# INLINE return #-}
+  return = pure
+  {-# INLINE (>>=) #-}
+  (Decoder d) >>= f = Decoder $ \val -> do
+    x <- d val
+    runDecoder (f x) val
+
+instance Alternative Decoder where
+  {-# INLINE (<|>) #-}
+  (Decoder a) <|> (Decoder b) = Decoder $ \val -> a val <|> b val
+  {-# INLINE empty #-}
+  empty = Decoder $ const empty
+
+instance MonadFail Decoder where
+  {-# INLINE fail #-}
+  fail e = Decoder $ \_ -> fail e
+
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
 decodeEither :: Decoder a -> BS.ByteString -> Either HermesException a
@@ -139,6 +167,8 @@ parseByteStringIO hEnv d bs =
 -- It is preferable to use `withHermesEnv` to keep foreign references in scope.
 -- Be careful using this, the foreign references can be finalized if the
 -- `HermesEnv` goes out of scope.
+--
+-- Do _not_ share a `HermesEnv` across multiple threads. Each thread should get its own.
 mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
