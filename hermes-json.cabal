@@ -60,7 +60,7 @@ library
     Data.Hermes.Decoder.Internal
   build-depends:
     attoparsec         >= 0.13.1 && < 0.15,
-    attoparsec-iso8601 >= 1.0.2.0 && < 1.0.3.0,
+    attoparsec-iso8601 >= 1.0.2.0 && < 1.2,
     base               >= 4.13 && < 4.18,
     bytestring         >= 0.10.12 && < 0.12,
     containers         >= 0.6.5 && < 0.7,
@@ -133,8 +133,8 @@ test-suite hermes-test
     hermes-json,
     scientific,
     text,
-    hedgehog       >= 1.0.5 && < 1.2,
+    hedgehog       >= 1.0.5 && < 1.3,
     tasty          >= 1.4.2 && < 1.6,
-    tasty-hedgehog >= 1.1.0 && < 1.4,
+    tasty-hedgehog >= 1.1.0 && < 1.5,
     time,
     vector
