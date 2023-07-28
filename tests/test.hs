@@ -6,6 +6,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+import           Control.Applicative ((<|>))
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
@@ -21,6 +22,7 @@ import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import           Test.Tasty
+import           Test.Tasty.HUnit
 import           Test.Tasty.Hedgehog
 
 import           Data.Hermes
@@ -29,13 +31,13 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [properties]
+tests = testGroup "Tests" [properties, units]
 
 properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
 
-genPeano :: MonadGen m => m Peano
-genPeano = Peano <$> Gen.word16 Range.linearBounded
+units :: TestTree
+units = testGroup "Units" [altCases]
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
@@ -43,25 +45,6 @@ rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
     t <- forAll genPeano
     dt <- roundtrip decodePeano t
     t === dt
-
-roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
-roundtrip decoder =
-  either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
-
-newtype Peano = Peano Word16
-  deriving (Eq, Show)
-
-instance A.ToJSON Peano where
-  toJSON (Peano 0) = A.object []
-  toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
-
-decodePeano :: Decoder Peano
-decodePeano = withObject $ \obj -> do
-  mPeano <- atKeyOptional "suc" decodePeano obj
-  pure $
-    case mPeano of
-      Just (Peano subTree) -> Peano $ 1 + subTree
-      Nothing -> Peano 0
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
@@ -96,6 +79,60 @@ rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
         d2 = decodeEither decodePerson p
     d1 === d2
 
+roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
+roundtrip decoder =
+  either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
+
+altCases :: TestTree
+altCases = testGroup "Alternative"
+  [ testCase "Object Iterator" $
+      decodeEither
+        (objectAsMap pure (1 <$ bool) <|> objectAsMap pure int)
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+
+  , testCase "Array Iterator" $
+      decodeEither
+        (([1] <$ list bool) <|> list int)
+        "[1, 2, 3]"
+      @?= Right [1,2,3]
+
+  , testCase "Number Arrays (Not Iterator)" $
+      decodeEither
+        (listOfDouble <|> ([1.0] <$ listOfInt))
+        "[1, true, 3]"
+      @?= Left (SIMDException (DocumentError
+        { path = ""
+        , errorMsg = "Error decoding array of ints. \
+                      \INCORRECT_TYPE: The JSON element \
+                      \does not have the requested type."
+        }))
+
+  , testCase "Inner Array Decoder" $
+      decodeEither
+        (list ((1 <$ bool) <|> int))
+        "[1, 2, 3]"
+      @?= Right [1,2,3]
+
+  , testCase "Inner Object Decoder" $
+      decodeEither
+        (objectAsMap (\txt -> fail "nope" <|> pure txt) ((1 <$ bool) <|> int))
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+
+  , testCase "Alternative Keys" $
+      decodeEither
+        (object $ atKey "key1" (1 <$ bool) <|> atKey "key2" int)
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right 2
+
+  , testCase "Alternative Objects" $
+      decodeEither
+        (object (atKey "key1" (2 <$ bool)) <|> object (atKey "key1" int))
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right 1
+  ]
+
 data Person =
   Person
     { _id           :: Text
@@ -104,7 +141,7 @@ data Person =
     , isActive      :: Bool
     , balance       :: Text
     , picture       :: Maybe Text
-    , age           :: Int
+    , age           :: Word
     , latitude      :: Double
     , longitude     :: Double
     , tags          :: V.Vector Text
@@ -127,7 +164,7 @@ data PersonOptional =
     , isActive      :: Maybe Bool
     , balance       :: Maybe Text
     , picture       :: Maybe (Maybe Text)
-    , age           :: Maybe Int
+    , age           :: Maybe Word
     , latitude      :: Maybe Double
     , longitude     :: Maybe Double
     , tags          :: Maybe (V.Vector Text)
@@ -164,54 +201,54 @@ data Employer =
     deriving anyclass A.ToJSON
 
 decodePerson :: Decoder Person
-decodePerson = withObject $ \obj ->
+decodePerson = object $
   Person
-    <$> atKey "_id" text obj
-    <*> atKey "index" int obj
-    <*> atKey "guid" text obj
-    <*> atKey "isActive" bool obj
-    <*> atKey "balance" text obj
-    <*> atKey "picture" (nullable text) obj
-    <*> atKey "age" int obj
-    <*> atKey "latitude" double obj
-    <*> atKey "longitude" double obj
-    <*> atKey "tags" (vector text) obj
-    <*> atKey "friends" (list decodeFriend) obj
-    <*> atKey "doubles" (list (list double)) obj
-    <*> atKey "greeting" (nullable text) obj
-    <*> atKey "favoriteFruit" text obj
-    <*> atKey "employer" decodeEmployer obj
+    <$> atKey "_id" text
+    <*> atKey "index" int
+    <*> atKey "guid" text
+    <*> atKey "isActive" bool
+    <*> atKey "balance" text
+    <*> atKey "picture" (nullable text)
+    <*> atKey "age" uint
+    <*> atKey "latitude" double
+    <*> atKey "longitude" double
+    <*> atKey "tags" (vector text)
+    <*> atKey "friends" (list decodeFriend)
+    <*> atKey "doubles" (list (list double))
+    <*> atKey "greeting" (nullable text)
+    <*> atKey "favoriteFruit" text
+    <*> atKey "employer" decodeEmployer
     <*> (Map.fromList <$> atKey "mapOfInts"
-          (objectAsKeyValues (pure . KeyType) int) obj)
-    <*> atKey "utcTimeField" utcTime obj
+          (objectAsKeyValues (pure . KeyType) int))
+    <*> atKey "utcTimeField" utcTime
 
 decodePersonOptional :: Decoder PersonOptional
-decodePersonOptional = withObject $ \obj ->
+decodePersonOptional = object $
   PersonOptional
-    <$> atKeyOptional "_id" text obj
-    <*> atKeyOptional "index" int obj
-    <*> atKeyOptional "guid" text obj
-    <*> atKeyOptional "isActive" bool obj
-    <*> atKeyOptional "balance" text obj
-    <*> atKeyOptional "picture" (nullable text) obj
-    <*> atKeyOptional "age" int obj
-    <*> atKeyOptional "latitude" double obj
-    <*> atKeyOptional "longitude" double obj
-    <*> atKeyOptional "tags" (vector text) obj
-    <*> atKeyOptional "friends" (list decodeFriend) obj
-    <*> atKeyOptional "doubles" (list (list double)) obj
-    <*> atKeyOptional "greeting" (nullable text) obj
-    <*> atKeyOptional "favoriteFruit" text obj
-    <*> atKeyOptional "employer" decodeEmployer obj
+    <$> atKeyOptional "_id" text
+    <*> atKeyOptional "index" int
+    <*> atKeyOptional "guid" text
+    <*> atKeyOptional "isActive" bool
+    <*> atKeyOptional "balance" text
+    <*> atKeyOptional "picture" (nullable text)
+    <*> atKeyOptional "age" uint
+    <*> atKeyOptional "latitude" double
+    <*> atKeyOptional "longitude" double
+    <*> atKeyOptional "tags" (vector text)
+    <*> atKeyOptional "friends" (list decodeFriend)
+    <*> atKeyOptional "doubles" (list (list double))
+    <*> atKeyOptional "greeting" (nullable text)
+    <*> atKeyOptional "favoriteFruit" text
+    <*> atKeyOptional "employer" decodeEmployer
     <*> (fmap Map.fromList <$> atKeyOptional "mapOfInts"
-          (objectAsKeyValues (pure . KeyType) int) obj)
-    <*> atKeyOptional "utcTimeField" utcTime obj
+          (objectAsKeyValues (pure . KeyType) int))
+    <*> atKeyOptional "utcTimeField" utcTime
 
 decodeFriend :: Decoder Friend
-decodeFriend = withObject $ \obj ->
+decodeFriend = object $
   Friend
-    <$> atKey "id" int obj
-    <*> atKey "name" text obj
+    <$> atKey "id" int
+    <*> atKey "name" text
 
 genPerson :: Gen Person
 genPerson = Person
@@ -221,7 +258,7 @@ genPerson = Person
   <*> Gen.bool
   <*> Gen.text (Range.linear 0 100) Gen.unicode
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.int (Range.linear 0 100)
+  <*> Gen.word (Range.linear minBound maxBound)
   <*> genDouble
   <*> genDouble
   <*> (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
@@ -243,7 +280,7 @@ genPersonOptional = PersonOptional
   <*> Gen.maybe Gen.bool
   <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
   <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
-  <*> Gen.maybe (Gen.int (Range.linear 0 100))
+  <*> Gen.maybe (Gen.word (Range.linear 0 100))
   <*> Gen.maybe genDouble
   <*> Gen.maybe genDouble
   <*> Gen.maybe (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
@@ -268,10 +305,10 @@ genEmployer = Employer
   <*> genScientific
 
 decodeEmployer :: Decoder Employer
-decodeEmployer = withObject $ \obj ->
+decodeEmployer = object $
   Employer
-    <$> atKey "inefficient" string obj
-    <*> atKey "exp" scientific obj
+    <$> atKey "inefficient" string
+    <*> atKey "exp" scientific
 
 utcTimeGenerator :: Gen Time.UTCTime
 utcTimeGenerator =
@@ -300,3 +337,21 @@ genDouble =
 
 genScientific :: Gen Scientific
 genScientific = fmap Sci.fromFloatDigits $ genDouble
+
+newtype Peano = Peano Word16
+  deriving (Eq, Show)
+
+instance A.ToJSON Peano where
+  toJSON (Peano 0) = A.object []
+  toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
+
+genPeano :: MonadGen m => m Peano
+genPeano = Peano <$> Gen.word16 Range.linearBounded
+
+decodePeano :: Decoder Peano
+decodePeano = object $ do
+  mPeano <- atKeyOptional "suc" decodePeano
+  pure $
+    case mPeano of
+      Just (Peano subTree) -> Peano $ 1 + subTree
+      Nothing -> Peano 0

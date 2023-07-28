@@ -8,7 +8,8 @@
 module Main where
 
 import           Control.Applicative (many)
-import           Control.DeepSeq (NFData)
+import           Control.DeepSeq (NFData, force)
+import           Control.Exception (evaluate)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Decoding as A.D
 import qualified Data.ByteString as BS
@@ -29,7 +30,7 @@ main :: IO ()
 main = defaultMain [
   env (BS.readFile "json/persons9000.json") $ \persons ->
   env (BS.readFile "json/twitter100.json") $ \twitter ->
-  env (pure $ genDoubles 1000000 1.23456789) $ \doubles ->
+  env (evaluate . force $ genDoubles 10000 1.23456789) $ \doubles ->
   env H.mkHermesEnv_ $ \hEnv ->
     bgroup "Decode" [
       bgroup "Arrays" [
@@ -85,36 +86,36 @@ data Person =
     deriving anyclass NFData
 
 decodePerson :: Decoder Person
-decodePerson = withObject $ \obj ->
+decodePerson = object $
   Person
-    <$> atKey "_id" text obj
-    <*> atKey "index" int obj
-    <*> atKey "guid" text obj
-    <*> atKey "isActive" bool obj
-    <*> atKey "balance" text obj
-    <*> atKey "picture" (nullable text) obj
-    <*> atKey "age" int obj
-    <*> atKey "eyeColor" text obj
-    <*> atKey "name" text obj
-    <*> atKey "gender" text obj
-    <*> atKey "company" text obj
-    <*> atKey "email" text obj
-    <*> atKey "phone" text obj
-    <*> atKey "address" text obj
-    <*> atKey "about" text obj
-    <*> atKey "registered" text obj
-    <*> atKey "latitude" scientific obj
-    <*> atKey "longitude" scientific obj
-    <*> atKey "tags" (list text) obj
-    <*> atKey "friends" (list decodeFriend) obj
-    <*> atKey "greeting" (nullable text) obj
-    <*> atKey "favoriteFruit" text obj
+    <$> atKey "_id" text
+    <*> atKey "index" int
+    <*> atKey "guid" text
+    <*> atKey "isActive" bool
+    <*> atKey "balance" text
+    <*> atKey "picture" (nullable text)
+    <*> atKey "age" int
+    <*> atKey "eyeColor" text
+    <*> atKey "name" text
+    <*> atKey "gender" text
+    <*> atKey "company" text
+    <*> atKey "email" text
+    <*> atKey "phone" text
+    <*> atKey "address" text
+    <*> atKey "about" text
+    <*> atKey "registered" text
+    <*> atKey "latitude" scientific
+    <*> atKey "longitude" scientific
+    <*> atKey "tags" (list text)
+    <*> atKey "friends" (list decodeFriend)
+    <*> atKey "greeting" (nullable text)
+    <*> atKey "favoriteFruit" text
 
 decodeFriend :: Decoder Friend
-decodeFriend = withObject $ \obj ->
+decodeFriend = object $
   Friend
-    <$> atKey "id" int obj
-    <*> atKey "name" text obj
+    <$> atKey "id" int
+    <*> atKey "name" text
 
 data Friend =
   Friend
@@ -182,23 +183,23 @@ data User =
     deriving anyclass (NFData, Aeson.FromJSON)
 
 decodeTwitter :: Decoder Twitter
-decodeTwitter = withObject $ \obj ->
+decodeTwitter = object $
   Twitter
-    <$> atKey "statuses" (list decodeStatus) obj
+    <$> atKey "statuses" (list decodeStatus)
 
 decodeStatus :: Decoder Status
-decodeStatus = withObject $ \obj -> do
-  u <- atKey "user" decodeUser obj
-  mdMap <- atKey "metadata" (objectAsMap pure text) obj
+decodeStatus = object $ do
+  u <- atKey "user" decodeUser
+  mdMap <- atKey "metadata" (objectAsMap pure text)
   pure $ Status u mdMap
 
 decodeUser :: Decoder User
-decodeUser = withObject $ \obj -> do
+decodeUser = object $
   User
-    <$> atKey "screen_name" text obj
-    <*> atKey "location" text obj
-    <*> atKey "description" text obj
-    <*> atKey "url" (nullable text) obj
+    <$> atKey "screen_name" text
+    <*> atKey "location" text
+    <*> atKey "description" text
+    <*> atKey "url" (nullable text)
 
 parseTwitter :: J.Parser Twitter
 parseTwitter =

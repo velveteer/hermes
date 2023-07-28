@@ -1,11 +1,7 @@
 -- | Contains functions for constructing and working with foreign simdjson instances.
 
 module Data.Hermes.SIMDJSON.Wrapper
-  ( allocaArray
-  , allocaArrayIter
-  , allocaObject
-  , allocaObjectIter
-  , allocaValue
+  ( allocaValue
   , mkSIMDParser
   , mkSIMDDocument
   , mkSIMDPaddedStr
@@ -19,7 +15,6 @@ import           Data.Maybe (fromMaybe)
 import           Control.Exception (mask_)
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.Marshal.Alloc as F
-import qualified Foreign.Ptr as F
 
 import           Data.Hermes.SIMDJSON.Bindings
   ( deleteDocumentImpl
@@ -58,25 +53,5 @@ withInputBuffer bs f = do
 {-# INLINE withInputBuffer #-}
 
 allocaValue :: (Value -> IO a) -> IO a
-allocaValue f = allocaBytes 24 $ \val -> f (Value val)
+allocaValue f = F.allocaBytes 24 $ \val -> f (Value val)
 {-# INLINE allocaValue #-}
-
-allocaObject :: (Object -> IO a) -> IO a
-allocaObject f = allocaBytes 24 $ \objPtr -> f (Object objPtr)
-{-# INLINE allocaObject #-}
-
-allocaArray :: (Array -> IO a) -> IO a
-allocaArray f = allocaBytes 24 $ \arr -> f (Array arr)
-{-# INLINE allocaArray #-}
-
-allocaArrayIter :: (ArrayIter -> IO a) -> IO a
-allocaArrayIter f = allocaBytes 24 $ \iter -> f (ArrayIter iter)
-{-# INLINE allocaArrayIter #-}
-
-allocaObjectIter :: (ObjectIter -> IO a) -> IO a
-allocaObjectIter f = allocaBytes 24 $ \iter -> f (ObjectIter iter)
-{-# INLINE allocaObjectIter #-}
-
-allocaBytes :: Int -> (F.Ptr a -> IO b) -> IO b
-allocaBytes size action = F.allocaBytes size action
-{-# INLINE allocaBytes #-}

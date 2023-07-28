@@ -3,5 +3,4 @@ packages:
   ../hermes-json.cabal
   ../hermes-aeson/hermes-aeson.cabal
 tests: True
-constraints: text == 2.0
 allow-newer: all

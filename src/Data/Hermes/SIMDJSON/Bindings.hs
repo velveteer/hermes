@@ -19,6 +19,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , getDoubleImpl
   , getErrorMessageImpl
   , getIntImpl
+  , getUIntImpl
   , getObjectFromValueImpl
   , getObjectIterFromValueImpl
   , getRawJSONTokenImpl
@@ -33,6 +34,8 @@ module Data.Hermes.SIMDJSON.Bindings
   , objectIterMoveNextImpl
   , parserInit
   , parserDestroy
+  , resetArrayImpl
+  , resetObjectImpl
   ) where
 
 import           Foreign.C (CBool(..), CInt(..), CSize(..), CString)
@@ -67,10 +70,10 @@ foreign import ccall unsafe "at_pointer" atPointerImpl
   :: CString -> Int -> Document -> Value -> IO CInt
 
 foreign import ccall unsafe "get_object_from_value" getObjectFromValueImpl
-  :: Value -> Object -> IO CInt
+  :: Value -> IO CInt
 
 foreign import ccall unsafe "get_object_iter_from_value" getObjectIterFromValueImpl
-  :: Value -> ObjectIter -> IO CInt
+  :: Value -> IO CInt
 
 foreign import ccall unsafe "obj_iter_is_done" objectIterIsDoneImpl
   :: ObjectIter -> IO CBool
@@ -85,7 +88,7 @@ foreign import ccall unsafe "get_array_from_value" getArrayFromValueImpl
   :: Value -> Array -> IO CInt
 
 foreign import ccall unsafe "get_array_len_from_value" getArrayLenFromValueImpl
-  :: Value -> Array -> Ptr CSize -> IO CInt
+  :: Value -> Ptr CSize -> IO CInt
 
 foreign import ccall unsafe "int_array" intArrayImpl
   :: Array -> Ptr Int -> IO CInt
@@ -94,10 +97,10 @@ foreign import ccall unsafe "double_array" doubleArrayImpl
   :: Array -> Ptr Double -> IO CInt
 
 foreign import ccall unsafe "get_array_iter_from_value" getArrayIterFromValueImpl
-  :: Value -> ArrayIter -> IO CInt
+  :: Value -> IO CInt
 
 foreign import ccall unsafe "get_array_iter_len_from_value" getArrayIterLenFromValueImpl
-  :: Value -> ArrayIter -> Ptr CSize -> IO CInt
+  :: Value -> Ptr CSize -> IO CInt
 
 foreign import ccall unsafe "arr_iter_is_done" arrayIterIsDoneImpl
   :: ArrayIter -> IO CBool
@@ -107,6 +110,12 @@ foreign import ccall unsafe "arr_iter_get_current" arrayIterGetCurrentImpl
 
 foreign import ccall unsafe "arr_iter_move_next" arrayIterMoveNextImpl
   :: ArrayIter -> IO ()
+
+foreign import ccall unsafe "reset_array" resetArrayImpl
+  :: Array -> IO ()
+
+foreign import ccall unsafe "reset_object" resetObjectImpl
+  :: Object -> IO ()
 
 foreign import ccall unsafe "find_field_unordered" findFieldUnorderedImpl
   :: Object -> CString -> Int -> Value -> IO CInt
@@ -121,6 +130,9 @@ foreign import ccall unsafe "get_error_message" getErrorMessageImpl
 -- Primitives
 foreign import ccall unsafe "get_int" getIntImpl
   :: Value -> Ptr Int -> IO CInt
+
+foreign import ccall unsafe "get_uint" getUIntImpl
+  :: Value -> Ptr Word -> IO CInt
 
 foreign import ccall unsafe "get_double" getDoubleImpl
   :: Value -> Ptr Double -> IO CInt

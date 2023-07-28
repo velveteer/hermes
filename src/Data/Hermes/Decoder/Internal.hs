@@ -17,6 +17,7 @@ module Data.Hermes.Decoder.Internal
   , DocumentError(..)
   , Path(..)
   , Decoder(..)
+  , FieldsDecoder(..)
   , asks
   , local
   , decodeEither
@@ -36,6 +37,7 @@ module Data.Hermes.Decoder.Internal
 import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData(..))
 import           Control.Exception (Exception, catch, throwIO, try)
+import           Control.Monad (when)
 import           Control.Monad.Primitive (PrimMonad(..))
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Reader (ReaderT(..))
@@ -44,17 +46,29 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
+import qualified Foreign.Marshal.Alloc as F
+import qualified Foreign.Ptr as F
+import qualified Foreign.Storable as F
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
 
-import           Data.Hermes.SIMDJSON.Bindings (getDocumentValueImpl, getErrorMessageImpl)
+import           Data.Hermes.SIMDJSON.Bindings
+  ( getDocumentValueImpl
+  , getErrorMessageImpl
+  , getTypeImpl
+  , resetArrayImpl
+  , resetObjectImpl
+  )
 import           Data.Hermes.SIMDJSON.Types
-  ( Document(..)
+  ( Array(..)
+  , Document(..)
+  , Object(..)
   , Parser(..)
   , SIMDDocument
   , SIMDErrorCode(..)
   , SIMDParser
   , Value(..)
+  , ValueType(..)
   )
 import           Data.Hermes.SIMDJSON.Wrapper
 
@@ -87,18 +101,18 @@ instance PrimMonad DecoderPrimM where
 -- when an object field or array value is entered.
 data HermesEnv =
   HermesEnv
-    { hParser   :: !(F.ForeignPtr SIMDParser)
-    , hDocument :: !(F.ForeignPtr SIMDDocument)
-    , hPath     :: ![Path]
+    { hParser   :: {-# UNPACK #-} !(F.ForeignPtr SIMDParser)
+    , hDocument :: {-# UNPACK #-} !(F.ForeignPtr SIMDDocument)
+    , hPath     :: [Path]
     } deriving (Eq, Generic)
 
 instance NFData HermesEnv where
   rnf HermesEnv{..} = rnf hPath `seq` ()
 
 data Path =
-    Key !Text
-  | Idx !Int
-  | Pointer !Text
+    Key Text
+  | Idx {-# UNPACK #-} !Int
+  | Pointer Text
   deriving (Eq, Show, Generic)
 
 instance NFData Path
@@ -125,13 +139,64 @@ instance Monad Decoder where
 
 instance Alternative Decoder where
   {-# INLINE (<|>) #-}
-  (Decoder a) <|> (Decoder b) = Decoder $ \val -> a val <|> b val
+  (Decoder a) <|> (Decoder b) = Decoder $ \val -> withRunInIO $ \run ->
+    run (a val) `catch` (\(_err :: HermesException) -> do
+      valType <- F.alloca $ \ptr -> do
+        errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
+        if errCode == SUCCESS
+          then fmap (Just . toEnum . fromIntegral) $ F.peek ptr
+          else pure Nothing
+      -- Attempt to reset arrays and objects on decoding errors.
+      -- This is necessary since when iterating over arrays and objects
+      -- we do not want to re-enter the object/array. simdjson lets us
+      -- "reset" the iterator so we can parse it anew.
+      when (valType == Just VArray) $ do
+          let (Value vptr) = val
+          resetArrayImpl (Array $ F.castPtr vptr)
+      when (valType == Just VObject) $ do
+          let (Value vptr) = val
+          resetObjectImpl (Object $ F.castPtr vptr)
+      run (b val))
+
   {-# INLINE empty #-}
   empty = Decoder $ const empty
 
 instance MonadFail Decoder where
   {-# INLINE fail #-}
   fail e = Decoder $ \_ -> fail e
+
+-- | Newtype over field decoders. This is helpful so users
+-- avoid unsafe decoders like `object $ object ...`.
+newtype FieldsDecoder a =
+  FieldsDecoder { runFieldsDecoder :: Object -> Decoder a }
+
+instance Functor FieldsDecoder where
+  {-# INLINE fmap #-}
+  fmap f (FieldsDecoder d) = FieldsDecoder $ \obj -> f <$> d obj
+
+instance Applicative FieldsDecoder where
+  {-# INLINE pure #-}
+  pure a = FieldsDecoder $ \_ -> pure a
+  {-# INLINE (<*>) #-}
+  (FieldsDecoder f) <*> (FieldsDecoder e) = FieldsDecoder $ \obj -> f obj <*> e obj
+
+instance Monad FieldsDecoder where
+  {-# INLINE return #-}
+  return = pure
+  {-# INLINE (>>=) #-}
+  (FieldsDecoder d) >>= f = FieldsDecoder $ \obj -> do
+    x <- d obj
+    runFieldsDecoder (f x) obj
+
+instance Alternative FieldsDecoder where
+  {-# INLINE (<|>) #-}
+  (FieldsDecoder a) <|> (FieldsDecoder b) = FieldsDecoder $ \obj -> a obj <|> b obj
+  {-# INLINE empty #-}
+  empty = FieldsDecoder $ const empty
+
+instance MonadFail FieldsDecoder where
+  {-# INLINE fail #-}
+  fail e = FieldsDecoder $ \_ -> fail e
 
 -- | Decode a strict `ByteString` using the simdjson::ondemand bindings.
 -- Creates simdjson instances on each decode.
@@ -157,7 +222,7 @@ parseByteStringIO hEnv d bs =
       F.withForeignPtr (hParser hEnv) $ \parserPtr ->
         F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
           err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
-          flip runReaderT hEnv . runDecoderM $ do
+          flip runReaderT hEnv{hPath=[]} . runDecoderM $ do
             handleErrorCode "" err
             runDecoder d valPtr
 
@@ -202,10 +267,10 @@ instance NFData HermesException
 -- | Record containing all pertinent information for troubleshooting an exception.
 data DocumentError =
   DocumentError
-    { path     :: !Text
+    { path     :: Text
     -- ^ The path to the current element determined by the decoder.
     -- Formatted in the JSON Pointer standard per RFC 6901.
-    , errorMsg :: !Text
+    , errorMsg :: Text
     -- ^ An error message.
     }
     deriving stock (Eq, Show, Generic)
@@ -213,7 +278,7 @@ data DocumentError =
 instance NFData DocumentError
 
 typePrefix :: Text -> Text
-typePrefix typ = "Error while getting value of type " <> typ <> ". "
+typePrefix typ = "Error while getting value of type " <> typ <> "."
 {-# INLINE typePrefix #-}
 
 -- | Re-throw an exception caught from the simdjson library.
@@ -250,7 +315,7 @@ handleErrorCode pre errInt = do
   then pure ()
   else do
     errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
-    throwSIMD $ pre <> T.pack errStr
+    throwSIMD $ pre <> " " <> T.pack errStr
 {-# INLINE handleErrorCode #-}
 
 withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
