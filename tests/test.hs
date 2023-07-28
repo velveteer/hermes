@@ -6,6 +6,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+import           Control.Applicative ((<|>))
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
@@ -21,6 +22,7 @@ import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import           Test.Tasty
+import           Test.Tasty.HUnit
 import           Test.Tasty.Hedgehog
 
 import           Data.Hermes
@@ -29,13 +31,13 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [properties]
+tests = testGroup "Tests" [properties, units]
 
 properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
 
-genPeano :: MonadGen m => m Peano
-genPeano = Peano <$> Gen.word16 Range.linearBounded
+units :: TestTree
+units = testGroup "Units" [altCases]
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
@@ -43,25 +45,6 @@ rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
     t <- forAll genPeano
     dt <- roundtrip decodePeano t
     t === dt
-
-roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
-roundtrip decoder =
-  either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
-
-newtype Peano = Peano Word16
-  deriving (Eq, Show)
-
-instance A.ToJSON Peano where
-  toJSON (Peano 0) = A.object []
-  toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
-
-decodePeano :: Decoder Peano
-decodePeano = withObject $ \obj -> do
-  mPeano <- atKeyOptional "suc" decodePeano obj
-  pure $
-    case mPeano of
-      Just (Peano subTree) -> Peano $ 1 + subTree
-      Nothing -> Peano 0
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
@@ -95,6 +78,60 @@ rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
     let d1 = decodeEither decodePerson p
         d2 = decodeEither decodePerson p
     d1 === d2
+
+roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
+roundtrip decoder =
+  either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
+
+altCases :: TestTree
+altCases = testGroup "Alternative"
+  [ testCase "Object Iterator" $
+      decodeEither
+        (objectAsMap pure (1 <$ bool) <|> objectAsMap pure int)
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+
+  , testCase "Array Iterator" $
+      decodeEither
+        (([1] <$ list bool) <|> list int)
+        "[1, 2, 3]"
+      @?= Right [1,2,3]
+
+  , testCase "Number Arrays (Not Iterator)" $
+      decodeEither
+        (listOfDouble <|> ([1.0] <$ listOfInt))
+        "[1, true, 3]"
+      @?= Left (SIMDException (DocumentError
+        { path = ""
+        , errorMsg = "Error decoding array of ints. \
+                      \INCORRECT_TYPE: The JSON element \
+                      \does not have the requested type."
+        }))
+
+  , testCase "Inner Array Decoder" $
+      decodeEither
+        (list ((1 <$ bool) <|> int))
+        "[1, 2, 3]"
+      @?= Right [1,2,3]
+
+  , testCase "Inner Object Decoder" $
+      decodeEither
+        (objectAsMap (\txt -> fail "nope" <|> pure txt) ((1 <$ bool) <|> int))
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+
+  , testCase "Alternative Keys" $
+      decodeEither
+        (withObject $ \obj -> atKey "key1" (1 <$ bool) obj <|> atKey "key2" int obj)
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right 2
+
+  , testCase "Alternative Objects" $
+      decodeEither
+        (withObject (atKey "key1" (2 <$ bool)) <|> withObject (atKey "key1" int))
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right 1
+  ]
 
 data Person =
   Person
@@ -300,3 +337,21 @@ genDouble =
 
 genScientific :: Gen Scientific
 genScientific = fmap Sci.fromFloatDigits $ genDouble
+
+newtype Peano = Peano Word16
+  deriving (Eq, Show)
+
+instance A.ToJSON Peano where
+  toJSON (Peano 0) = A.object []
+  toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
+
+genPeano :: MonadGen m => m Peano
+genPeano = Peano <$> Gen.word16 Range.linearBounded
+
+decodePeano :: Decoder Peano
+decodePeano = withObject $ \obj -> do
+  mPeano <- atKeyOptional "suc" decodePeano obj
+  pure $
+    case mPeano of
+      Just (Peano subTree) -> Peano $ 1 + subTree
+      Nothing -> Peano 0

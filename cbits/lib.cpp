@@ -44,19 +44,15 @@ extern "C" {
     return doc.at_pointer(pointerSv).get(out);
   }
 
-  error_code get_object_from_value(
-      ondemand::value &val,
-      ondemand::object &out) {
-    return val.get_object().get(out);
+  error_code get_object_from_value(ondemand::value &val) {
+    return val.get_object().error();
   }
 
-  error_code get_object_iter_from_value(
-      ondemand::value &val,
-      ondemand::object_iterator &iterOut) {
+  error_code get_object_iter_from_value(ondemand::value &val) {
     ondemand::object obj;
     auto error = val.get_object().get(obj);
     if (error != SUCCESS) { return error; }
-    return obj.begin().get(iterOut);
+    return obj.begin().error();
   }
 
   bool obj_iter_is_done(ondemand::object_iterator &obj) {
@@ -91,8 +87,8 @@ extern "C" {
 
   error_code get_array_len_from_value(
       ondemand::value &val,
-      ondemand::array &out,
       size_t &len) {
+    ondemand::array out;
     auto error = val.get_array().get(out);
     if (error) { return error; }
     return out.count_elements().get(len);
@@ -116,23 +112,18 @@ extern "C" {
     return SUCCESS;
   }
 
-  error_code get_array_iter_from_value(
-      ondemand::value &val,
-      ondemand::array_iterator &iterOut) {
+  error_code get_array_iter_from_value(ondemand::value &val) {
     ondemand::array arr;
     auto error = val.get_array().get(arr);
     if (error != SUCCESS) { return error; }
-    return arr.begin().get(iterOut);
+    return arr.begin().error();
   }
 
-  error_code get_array_iter_len_from_value(
-      ondemand::value &val,
-      ondemand::array_iterator &iterOut,
-      size_t &len) {
+  error_code get_array_iter_len_from_value(ondemand::value &val, size_t &len) {
     ondemand::array arr;
     auto error = val.get_array().get(arr);
     if (error != SUCCESS) { return error; }
-    error = arr.begin().get(iterOut);
+    error = arr.begin().error();
     if (error != SUCCESS) { return error; }
     return arr.count_elements().get(len);
   }
@@ -147,6 +138,14 @@ extern "C" {
 
   void arr_iter_move_next(ondemand::array_iterator &arr) {
     ++arr;
+  }
+
+  void reset_array(ondemand::array &arr) {
+    arr.reset();
+  }
+
+  void reset_object(ondemand::object &obj) {
+    obj.reset();
   }
 
   error_code find_field(

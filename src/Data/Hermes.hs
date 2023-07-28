@@ -43,6 +43,8 @@ module Data.Hermes
   , string
   , text
   , list
+  , listOfInt
+  , listOfDouble
   , vector
   , nullable
   , objectAsKeyValues
@@ -65,7 +67,6 @@ module Data.Hermes
     -- * Value helpers
   , getType
   , isNull
-  , withArray
   , withBool
   , withDouble
   , withInt

@@ -44,17 +44,29 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
+import qualified Foreign.Marshal.Alloc as F
+import qualified Foreign.Ptr as F
+import qualified Foreign.Storable as F
 import           GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
 
-import           Data.Hermes.SIMDJSON.Bindings (getDocumentValueImpl, getErrorMessageImpl)
+import           Data.Hermes.SIMDJSON.Bindings
+  ( getDocumentValueImpl
+  , getErrorMessageImpl
+  , getTypeImpl
+  , resetArrayImpl
+  , resetObjectImpl
+  )
 import           Data.Hermes.SIMDJSON.Types
-  ( Document(..)
+  ( Array(..)
+  , Document(..)
+  , Object(..)
   , Parser(..)
   , SIMDDocument
   , SIMDErrorCode(..)
   , SIMDParser
   , Value(..)
+  , ValueType(..)
   )
 import           Data.Hermes.SIMDJSON.Wrapper
 
@@ -96,9 +108,9 @@ instance NFData HermesEnv where
   rnf HermesEnv{..} = rnf hPath `seq` ()
 
 data Path =
-    Key !Text
-  | Idx !Int
-  | Pointer !Text
+    Key {-# UNPACK #-} !Text
+  | Idx {-# UNPACK #-} !Int
+  | Pointer {-# UNPACK #-} !Text
   deriving (Eq, Show, Generic)
 
 instance NFData Path
@@ -125,7 +137,28 @@ instance Monad Decoder where
 
 instance Alternative Decoder where
   {-# INLINE (<|>) #-}
-  (Decoder a) <|> (Decoder b) = Decoder $ \val -> a val <|> b val
+  (Decoder a) <|> (Decoder b) = Decoder $ \val -> withRunInIO $ \run ->
+    run (a val) `catch` (\(_err :: HermesException) -> F.alloca $ \ptr -> do
+      errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
+      if errCode == SUCCESS
+      -- Attempt to reset arrays and objects on decoding errors.
+      -- This is necessary since when iterating over arrays and objects
+      -- we do not want to re-enter the object/array. simdjson lets us
+      -- "reset" the iterator so we can parse it anew.
+      then do
+        valType <- fmap (toEnum . fromIntegral) $ F.peek ptr
+        case valType of
+          VArray -> do
+            let (Value vptr) = val
+            resetArrayImpl (Array $ F.castPtr vptr)
+            run (b val)
+          VObject -> do
+            let (Value vptr) = val
+            resetObjectImpl (Object $ F.castPtr vptr)
+            run (b val)
+          _ -> run (b val)
+      else run (b val))
+
   {-# INLINE empty #-}
   empty = Decoder $ const empty
 
@@ -157,7 +190,7 @@ parseByteStringIO hEnv d bs =
       F.withForeignPtr (hParser hEnv) $ \parserPtr ->
         F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
           err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
-          flip runReaderT hEnv . runDecoderM $ do
+          flip runReaderT hEnv{hPath=[]} . runDecoderM $ do
             handleErrorCode "" err
             runDecoder d valPtr
 

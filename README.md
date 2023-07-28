@@ -74,33 +74,33 @@ Left (SIMDException (DocumentError {path = "/hello/1", errorMsg = "Error while g
 
 ## Benchmarks
 We benchmark the following operations using both `hermes-json` and `aeson` strict ByteString decoders:
-* Decode an array of 1 million 3-element arrays of doubles
+* Decode a small array of 3-element arrays of doubles
 * Full decoding of a large-ish (12 MB) JSON array of Person objects
 * Partial decoding of Twitter status objects to highlight the on-demand benefits
 * Decoding entire documents into `Data.Aeson.Value`
 
 ### Specs
 
-* GHC 9.4.4
-* aeson-2.1.2.1 (using `Data.Aeson.Decoding`) with text-2.0.2
+* GHC 9.4.6 w/ -O1
+* aeson-2.2 with text > 2.0
 * Apple M1 Pro
 
 ![](https://raw.githubusercontent.com/velveteer/hermes/master/hermes-bench/bench.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
-| Name                                    | Mean (ps)     | 2*Stdev (ps) | Allocated  | Copied     | Peak Memory |
-| --------------------------------------- | ------------- | ------------ | ---------- | ---------- | ----------- |
-| All.Decode.Arrays.Hermes                | 267914650000  | 10610366160  | 503599934  | 439150544  | 541065216   |
-| All.Decode.Arrays.Aeson                 | 2214928800000 | 160279563772 | 7094759111 | 2392723388 | 1166016512  |
-| All.Decode.Persons.Hermes               | 47338175000   | 4290343628   | 144901928  | 57032737   | 1166016512  |
-| All.Decode.Persons.Aeson                | 132864400000  | 9509102680   | 357269946  | 188529742  | 1166016512  |
-| All.Decode.Partial Twitter.Hermes       | 241083593     | 13856196     | 348540     | 3088       | 1166016512  |
-| All.Decode.Partial Twitter.JsonStream   | 2116192187    | 158907568    | 15259526   | 273821     | 1166016512  |
-| All.Decode.Partial Twitter.Aeson        | 4254060937    | 262619196    | 12538003   | 4634594    | 1166016512  |
-| All.Decode.Persons (Aeson Value).Hermes | 106420425000  | 3747538126   | 303886293  | 135388183  | 1166016512  |
-| All.Decode.Persons (Aeson Value).Aeson  | 119489550000  | 9713032080   | 286148916  | 177027852  | 1166016512  |
-| All.Decode.Twitter (Aeson Value).Hermes | 4164246875    | 240020934    | 12368752   | 4149211    | 1166016512  |
-| All.Decode.Twitter (Aeson Value).Aeson  | 4810817187    | 345165042    | 12539421   | 5527424    | 1166016512  |
+| Name                                    | Mean (ps)    | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
+| --------------------------------------- | ------------ | ------------ | --------- | --------- | ----------- |
+| All.Decode.Arrays.Hermes                | 1031658203   | 31195768     | 3916908   | 85221     | 54525952    |
+| All.Decode.Arrays.Aeson                 | 11526871875  | 542777550    | 55871041  | 4673421   | 67108864    |
+| All.Decode.Persons.Hermes               | 43788187500  | 2189110548   | 119152269 | 37904411  | 89128960    |
+| All.Decode.Persons.Aeson                | 142248700000 | 11887608188  | 349515982 | 153779273 | 221249536   |
+| All.Decode.Partial Twitter.Hermes       | 260118994    | 17617988     | 277300    | 382       | 221249536   |
+| All.Decode.Partial Twitter.JsonStream   | 2256925000   | 107303312    | 15009706  | 27008     | 221249536   |
+| All.Decode.Partial Twitter.Aeson        | 2688571875   | 243962004    | 12320459  | 351485    | 221249536   |
+| All.Decode.Persons (Aeson Value).Hermes | 101379400000 | 4329251210   | 245147240 | 108119891 | 221249536   |
+| All.Decode.Persons (Aeson Value).Aeson  | 110383175000 | 9621688702   | 276342962 | 122810106 | 221249536   |
+| All.Decode.Twitter (Aeson Value).Hermes | 2103806250   | 163585840    | 8898272   | 222718    | 221249536   |
+| All.Decode.Twitter (Aeson Value).Aeson  | 2680431250   | 215836460    | 12221250  | 444153    | 221249536   |
 |                                         |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 

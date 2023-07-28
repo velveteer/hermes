@@ -11,13 +11,13 @@ extra-source-files:
 
 benchmark bench
   build-depends:
-    aeson       >= 2.1.2.1 && < 2.2,
+    aeson       >= 2.1.2.1,
     base        >= 4.14.3 && < 4.18,
     bytestring  >= 0.10.12 && < 0.12,
     deepseq     >= 1.4.4 && < 1.5,
     containers  >= 0.6.5 && < 0.7,
     json-stream >= 0.4 && < 0.5,
-    scientific  >= 0.3.7 && < 0.4,
+    scientific  >= 0.3.7 && < 0.5,
     text        >= 2.0 && < 2.1,
     tasty       >= 1.4.2 && < 1.6,
     tasty-bench >= 0.3 && < 0.4,
@@ -25,7 +25,10 @@ benchmark bench
     hermes-aeson
   default-extensions: OverloadedStrings
   default-language:   Haskell2010
-  ghc-options:        -Wall
+  ghc-options:
+    "-with-rtsopts=-A32m"
+    -Wall
+    -threaded
   hs-source-dirs:     src
   main-is:            Main.hs
   type:               exitcode-stdio-1.0
