@@ -12,8 +12,8 @@ library
   exposed-modules:
     Data.Hermes.Aeson
   build-depends:
-    aeson  >= 2.0.1 && < 2.2,
-    base   >= 4.16.4.0,
+    aeson  >= 2.0.1,
+    base   >= 4.14.3,
     hermes-json
   hs-source-dirs:   src
   ghc-options:      -Wall -O2

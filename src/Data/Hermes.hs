@@ -2,8 +2,10 @@
 -- of the simdjson::ondemand API.
 --
 -- A decoder is really a function from a simdjson `Value` to some Haskell type in the `DecoderM` monad.
--- It looks like [Data.Aeson.parseJSON](https://hackage.haskell.org/package/aeson-2.0.2.0/docs/Data-Aeson.html#v:parseJSON), except the `Value` is opaque and can only be used
--- when it's passed by reference across the C FFI.
+-- It looks like
+-- [Data.Aeson.parseJSON](https://hackage.haskell.org/package/aeson-2.0.2.0/docs/Data-Aeson.html#v:parseJSON),
+-- except the `Value` is opaque and can only be used when it's passed by
+-- reference across the C FFI.
 --
 -- `decodeEither` provides the quickest way to feed the initial `Value` to your decoder.
 -- It does this by obtaining a top-level `Value` from the simdjson document
@@ -18,6 +20,7 @@ module Data.Hermes
   , parseByteString
   , parseByteStringIO
   , Decoder(runDecoder)
+  , FieldsDecoder(runFieldsDecoder)
     -- * Decoder monad
   , DecoderM(runDecoderM)
   , HermesEnv(hPath, hDocument, hParser)
@@ -25,9 +28,7 @@ module Data.Hermes
   , mkHermesEnv_
   , withHermesEnv
   , withHermesEnv_
-    -- * Object field accessors
-    -- | Obtain an object using `withObject` that can be passed
-    -- to these field lookup functions.
+    -- * Object field decoders
   , atKey
   , atKeyOptional
   , atKeyStrict
@@ -39,18 +40,22 @@ module Data.Hermes
   , char
   , double
   , int
+  , uint
+  , object
   , scientific
   , string
   , text
   , list
+  , listOfInt
+  , listOfDouble
   , vector
   , nullable
   , objectAsKeyValues
   , objectAsMap
     -- ** Date and time
     -- | Parses date and time types from Data.Time using the
-    -- same attoparsec parsers as Data.Aeson via
-    -- <https://hackage.haskell.org/package/attoparsec-iso8601>.
+    -- same Text parsers as Data.Aeson via
+    -- <https://hackage.haskell.org/package/text-iso8601>.
   , day
   , month
   , quarter
@@ -65,11 +70,9 @@ module Data.Hermes
     -- * Value helpers
   , getType
   , isNull
-  , withArray
   , withBool
   , withDouble
   , withInt
-  , withObject
   , withObjectAsMap
   , withScientific
   , withString
@@ -93,6 +96,7 @@ import           Data.Hermes.Decoder
 import           Data.Hermes.Decoder.Internal
   ( DecoderM(runDecoderM)
   , Decoder(runDecoder)
+  , FieldsDecoder(runFieldsDecoder)
   , DocumentError(..)
   , HermesEnv(hDocument, hParser, hPath)
   , HermesException(..)
