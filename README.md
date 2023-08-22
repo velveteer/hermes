@@ -85,7 +85,7 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * aeson-2.2 with text > 2.0
 * Apple M1 Pro
 
-![](https://raw.githubusercontent.com/velveteer/hermes/master/hermes-bench/bench.svg)
+![](hermes-bench/bench.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                    | Mean (ps)    | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
