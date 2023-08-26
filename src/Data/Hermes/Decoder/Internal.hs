@@ -32,6 +32,7 @@ module Data.Hermes.Decoder.Internal
   , parseByteStringIO
   , liftIO
   , withRunInIO
+  , liftObjectDecoder
   ) where
 
 import           Control.Applicative (Alternative(..))
@@ -335,3 +336,16 @@ asks f = DecoderM . ReaderT $ pure . f
 local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
 local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
 {-# INLINE local #-}
+
+-- | Resets the object being iterated and runs the provided `Decoder` on the
+-- object but as a `FieldsDecoder`. This is mostly a convenience for
+-- re-entering an object while it is already being iterated, which isn't very
+-- useful or performant.
+--
+-- > object $ (,)
+-- >   <$> atKey "hello" text
+-- >   <*> liftObjectDecoder (objectAsMap pure text)))
+liftObjectDecoder :: Decoder a -> FieldsDecoder a
+liftObjectDecoder decoder = FieldsDecoder $ \(Object obj) -> Decoder $ \_ -> do
+  liftIO $ resetObjectImpl (Object obj)
+  runDecoder decoder (Value $ F.castPtr obj)
