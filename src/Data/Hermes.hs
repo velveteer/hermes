@@ -68,6 +68,7 @@ module Data.Hermes
     -- * Error Types
   , HermesException(..)
   , DocumentError(..)
+  , formatException
     -- * Value helpers
   , getType
   , isNull
@@ -103,6 +104,7 @@ import           Data.Hermes.Decoder.Internal
   , HermesException(..)
   , decodeEither
   , decodeEitherIO
+  , formatException
   , liftObjectDecoder
   , mkHermesEnv
   , mkHermesEnv_

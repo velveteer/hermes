@@ -22,6 +22,7 @@ module Data.Hermes.Decoder.Internal
   , local
   , decodeEither
   , decodeEitherIO
+  , formatException
   , mkHermesEnv
   , mkHermesEnv_
   , withHermesEnv
@@ -265,6 +266,15 @@ data HermesException =
 instance Exception HermesException
 instance NFData HermesException
 
+formatException :: HermesException -> Text
+formatException ex = case ex of
+  SIMDException doc     -> formatDoc doc
+  InternalException doc -> formatDoc doc
+  where
+    formatDoc err
+      | T.null (path err) = "Document error: " <> errorMsg err
+      | otherwise = "Error in " <> path err <> ": " <> errorMsg err
+
 -- | Record containing all pertinent information for troubleshooting an exception.
 data DocumentError =
   DocumentError
@@ -316,7 +326,7 @@ handleErrorCode pre errInt = do
   then pure ()
   else do
     errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
-    throwSIMD $ pre <> " " <> T.pack errStr
+    throwSIMD . T.strip $ T.unwords [pre, T.pack errStr]
 {-# INLINE handleErrorCode #-}
 
 withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
