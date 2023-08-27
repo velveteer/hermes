@@ -192,7 +192,8 @@ instance Monad FieldsDecoder where
 
 instance Alternative FieldsDecoder where
   {-# INLINE (<|>) #-}
-  (FieldsDecoder a) <|> (FieldsDecoder b) = FieldsDecoder $ \obj -> a obj <|> b obj
+  (FieldsDecoder a) <|> (FieldsDecoder b) = FieldsDecoder $ \obj -> Decoder $ \val ->
+    runDecoder (a obj) val <|> runDecoder (b obj) val
   {-# INLINE empty #-}
   empty = FieldsDecoder $ const empty
 
@@ -349,7 +350,7 @@ local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
 
 -- | Resets the object being iterated and runs the provided `Decoder` on the
 -- object but as a `FieldsDecoder`. This is mostly a convenience for
--- re-entering an object while it is already being iterated, which isn't very
+-- re-entering an object after starting iteration, which isn't very
 -- useful or performant.
 --
 -- > object $ (,)
@@ -359,3 +360,4 @@ liftObjectDecoder :: Decoder a -> FieldsDecoder a
 liftObjectDecoder decoder = FieldsDecoder $ \(Object obj) -> Decoder $ \_ -> do
   liftIO $ resetObjectImpl (Object obj)
   runDecoder decoder (Value $ F.castPtr obj)
+{-# INLINE liftObjectDecoder #-}

@@ -48,21 +48,21 @@ rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
 
 rtProp :: TestTree
 rtProp = testProperty "Round Trip With Aeson.ToJSON" $
-  withTests 1000 . property $ do
+  property $ do
     p <- forAll genPerson
     dp <- roundtrip decodePerson p
     p === dp
 
 rtPropOptional :: TestTree
 rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
-  withTests 1000 . property $ do
+  property $ do
     p <- forAll genPersonOptional
     dp <- roundtrip decodePersonOptional p
     p === dp
 
 rtErrors :: TestTree
 rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
-  withTests 1000 . property $ do
+  property $ do
     p <- forAll
        $ Gen.element
        [ "{"
@@ -120,9 +120,15 @@ altCases = testGroup "Alternative"
         "{ \"key1\": 1, \"key2\": 2 }"
       @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
 
-  , testCase "Alternative Keys" $
+  , testCase "Alternative Keys (value error)" $
       decodeEither
         (object $ atKey "key1" (1 <$ bool) <|> atKey "key2" int)
+        "{ \"key1\": 1, \"key2\": 2 }"
+      @?= Right 2
+
+  , testCase "Alternative Keys (key error)" $
+      decodeEither
+        (object $ atKey "nope" int <|> atKey "key2" int)
         "{ \"key1\": 1, \"key2\": 2 }"
       @?= Right 2
 
