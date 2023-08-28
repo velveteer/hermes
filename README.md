@@ -79,6 +79,10 @@ We benchmark the following operations using both `hermes-json` and `aeson` stric
 * Partial decoding of Twitter status objects to highlight the on-demand benefits
 * Decoding entire documents into `Data.Aeson.Value`
 
+Please be aware that GHC does not report C-allocated memory. simdjson does actually
+allocate more memory than appears here, but we still strive to keep our Haskell memory
+footprint as small as possible.
+
 ### Specs
 
 * GHC 9.4.6 w/ -O1

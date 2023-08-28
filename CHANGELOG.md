@@ -1,5 +1,19 @@
 # Revision history for hermes-json
 
+## 0.6.1.0 -- 2023-08-27
+
+### Changed
+* Bump upper bounds on dependencies
+
+### Fixed
+* Fix bug in `FieldsDecoder` `Alternative` instance that was causing seg faults
+  on missing keys
+
+### Added
+* Add `liftObjectDecoder`
+* Add `objectAsMapExcluding`
+* Add `formatException`
+
 ## 0.6.0.0 -- 2023-08-22
 
 ### Breaking Changes:
