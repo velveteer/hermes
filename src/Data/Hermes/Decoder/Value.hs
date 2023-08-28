@@ -19,6 +19,7 @@ module Data.Hermes.Decoder.Value
   , object
   , objectAsKeyValues
   , objectAsMap
+  , objectAsMapExcluding
   , parseScientific
   , scientific
   , string
@@ -217,6 +218,21 @@ objectAsMap
   -> Decoder (Map k v)
 objectAsMap kf vf = withObjectIter $ iterateOverFieldsMap kf vf
 {-# INLINE objectAsMap #-}
+
+-- | Parse an object into a strict `Map`.
+-- Skips any fields in the given list, which adds a slight performance penalty.
+objectAsMapExcluding
+  :: Ord k
+  => [Text]
+  -- ^ List of field names to exclude.
+  -> (Text -> Decoder k)
+  -- ^ Parses a Text key in the Decoder monad. JSON keys are always text.
+  -> Decoder v
+  -- ^ Decoder for the field value.
+  -> Decoder (Map k v)
+objectAsMapExcluding fields kf vf =
+  withObjectIter $ iterateOverFieldsMapExcluding fields kf vf
+{-# INLINE objectAsMapExcluding #-}
 
 withObjectAsMap
   :: Ord k
@@ -427,6 +443,45 @@ iterateOverFieldsMap fk fv iterPtr =
         else
           pure acc
 {-# INLINE iterateOverFieldsMap #-}
+
+iterateOverFieldsMapExcluding
+  :: Ord a
+  => [Text]
+  -> (Text -> Decoder a)
+  -> Decoder b
+  -> ObjectIter
+  -> DecoderM (Map a b)
+iterateOverFieldsMapExcluding fields fk fv iterPtr =
+  withRunInIO $ \run ->
+    F.alloca $ \lenPtr ->
+      F.alloca $ \keyPtr ->
+        allocaValue $ \valPtr -> run $ go M.empty keyPtr lenPtr valPtr
+  where
+    go !acc keyPtr lenPtr valPtr = do
+      isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
+      if not isOver
+        then do
+          err <- liftIO $ objectIterGetCurrentImpl iterPtr keyPtr lenPtr valPtr
+          handleErrorCode "" err
+          kLen <- fmap fromIntegral . liftIO $ F.peek lenPtr
+          kStr <- liftIO $ F.peek keyPtr
+          keyTxt <- parseTextFromCStrLen (kStr, kLen)
+          if keyTxt `elem` fields
+            then do
+              liftIO $ objectIterMoveNextImpl iterPtr
+              go acc keyPtr lenPtr valPtr
+            else do
+              (k, v)
+                <-
+                  withKey keyTxt $ do
+                    k <- runDecoder (fk keyTxt) valPtr
+                    v <- runDecoder fv valPtr
+                    pure (k, v)
+              liftIO $ objectIterMoveNextImpl iterPtr
+              go (M.insert k v acc) keyPtr lenPtr valPtr
+        else
+          pure acc
+{-# INLINE iterateOverFieldsMapExcluding #-}
 
 -- | Execute a function on each Field in an ObjectIter and
 -- accumulate key-value tuples into a list.

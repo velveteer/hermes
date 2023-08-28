@@ -37,7 +37,7 @@ properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
 
 units :: TestTree
-units = testGroup "Units" [altCases]
+units = testGroup "Units" [altCases, objectFields]
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
@@ -137,6 +137,13 @@ altCases = testGroup "Alternative"
         (object (atKey "key1" (2 <$ bool)) <|> object (atKey "key1" int))
         "{ \"key1\": 1, \"key2\": 2 }"
       @?= Right 1
+  ]
+
+objectFields :: TestTree
+objectFields = testGroup "Object Fields"
+  [ testCase "liftObjectDecoder" $
+      decodeEither decodeFriendSlurp "{ \"id\": 1, \"first\": \"Bob\", \"last\": \"Kelso\" }"
+    @?= Right (FriendWithMap 1 (Map.fromList [("first", "Bob"), ("last", "Kelso")]))
   ]
 
 data Person =
@@ -342,7 +349,7 @@ genDouble =
     1000000000000000000000000
 
 genScientific :: Gen Scientific
-genScientific = fmap Sci.fromFloatDigits $ genDouble
+genScientific = fmap Sci.fromFloatDigits genDouble
 
 newtype Peano = Peano Word16
   deriving (Eq, Show)
@@ -361,3 +368,15 @@ decodePeano = object $ do
     case mPeano of
       Just (Peano subTree) -> Peano $ 1 + subTree
       Nothing -> Peano 0
+
+data FriendWithMap =
+  FriendWithMap
+    { id   :: Int
+    , rest :: Map Text Text
+    } deriving (Eq, Show)
+
+decodeFriendSlurp :: Decoder FriendWithMap
+decodeFriendSlurp = object $
+  FriendWithMap
+    <$> atKey "id" int
+    <*> liftObjectDecoder (objectAsMapExcluding ["id"] pure text)

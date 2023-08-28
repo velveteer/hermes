@@ -52,6 +52,7 @@ module Data.Hermes
   , nullable
   , objectAsKeyValues
   , objectAsMap
+  , objectAsMapExcluding
   , liftObjectDecoder
     -- ** Date and time
     -- | Parses date and time types from Data.Time using the
