@@ -22,6 +22,7 @@ module Data.Hermes.Decoder.Internal
   , local
   , decodeEither
   , decodeEitherIO
+  , formatException
   , mkHermesEnv
   , mkHermesEnv_
   , withHermesEnv
@@ -32,6 +33,7 @@ module Data.Hermes.Decoder.Internal
   , parseByteStringIO
   , liftIO
   , withRunInIO
+  , liftObjectDecoder
   ) where
 
 import           Control.Applicative (Alternative(..))
@@ -190,7 +192,8 @@ instance Monad FieldsDecoder where
 
 instance Alternative FieldsDecoder where
   {-# INLINE (<|>) #-}
-  (FieldsDecoder a) <|> (FieldsDecoder b) = FieldsDecoder $ \obj -> a obj <|> b obj
+  (FieldsDecoder a) <|> (FieldsDecoder b) = FieldsDecoder $ \obj -> Decoder $ \val ->
+    runDecoder (a obj) val <|> runDecoder (b obj) val
   {-# INLINE empty #-}
   empty = FieldsDecoder $ const empty
 
@@ -264,6 +267,15 @@ data HermesException =
 instance Exception HermesException
 instance NFData HermesException
 
+formatException :: HermesException -> Text
+formatException ex = case ex of
+  SIMDException doc     -> formatDoc doc
+  InternalException doc -> formatDoc doc
+  where
+    formatDoc err
+      | T.null (path err) = "Document error: " <> errorMsg err
+      | otherwise = "Error in " <> path err <> ": " <> errorMsg err
+
 -- | Record containing all pertinent information for troubleshooting an exception.
 data DocumentError =
   DocumentError
@@ -315,7 +327,7 @@ handleErrorCode pre errInt = do
   then pure ()
   else do
     errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
-    throwSIMD $ pre <> " " <> T.pack errStr
+    throwSIMD . T.strip $ T.unwords [pre, T.pack errStr]
 {-# INLINE handleErrorCode #-}
 
 withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
@@ -335,3 +347,17 @@ asks f = DecoderM . ReaderT $ pure . f
 local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
 local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
 {-# INLINE local #-}
+
+-- | Resets the object being iterated and runs the provided `Decoder` on the
+-- object but as a `FieldsDecoder`. This is mostly a convenience for
+-- re-entering an object after starting iteration, which isn't very
+-- useful or performant.
+--
+-- > object $ (,)
+-- >   <$> atKey "hello" text
+-- >   <*> liftObjectDecoder (objectAsMap pure text)))
+liftObjectDecoder :: Decoder a -> FieldsDecoder a
+liftObjectDecoder decoder = FieldsDecoder $ \(Object obj) -> Decoder $ \_ -> do
+  liftIO $ resetObjectImpl (Object obj)
+  runDecoder decoder (Value $ F.castPtr obj)
+{-# INLINE liftObjectDecoder #-}

@@ -52,6 +52,8 @@ module Data.Hermes
   , nullable
   , objectAsKeyValues
   , objectAsMap
+  , objectAsMapExcluding
+  , liftObjectDecoder
     -- ** Date and time
     -- | Parses date and time types from Data.Time using the
     -- same Text parsers as Data.Aeson via
@@ -67,6 +69,7 @@ module Data.Hermes
     -- * Error Types
   , HermesException(..)
   , DocumentError(..)
+  , formatException
     -- * Value helpers
   , getType
   , isNull
@@ -102,6 +105,8 @@ import           Data.Hermes.Decoder.Internal
   , HermesException(..)
   , decodeEither
   , decodeEitherIO
+  , formatException
+  , liftObjectDecoder
   , mkHermesEnv
   , mkHermesEnv_
   , parseByteString
