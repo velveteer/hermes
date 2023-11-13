@@ -25,9 +25,7 @@ benchmark bench
     hermes-aeson
   default-extensions: OverloadedStrings
   default-language:   Haskell2010
-  ghc-options:
-    -with-rtsopts=-A64m
-    -Wall
+  ghc-options:        -Wall
   hs-source-dirs:     src
   main-is:            Main.hs
   type:               exitcode-stdio-1.0

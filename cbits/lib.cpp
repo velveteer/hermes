@@ -1,4 +1,4 @@
-#include "./simdjson/simdjson.h"
+#include "simdjson.h"
 using namespace simdjson;
 extern "C" {
   ondemand::parser *parser_init(size_t max_cap) {
