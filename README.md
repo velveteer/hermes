@@ -89,7 +89,7 @@ footprint as small as possible.
 * aeson-2.2 with text > 2.0
 * Apple M1 Pro
 
-![](hermes-bench/bench.svg)
+![](https://raw.githubusercontent.com/velveteer/hermes/67a95db4a5947273a1e870cc7f5caf809b5a5cc6/hermes-bench/bench.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                                    | Mean (ps)    | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |

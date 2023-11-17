@@ -17,7 +17,6 @@ extra-source-files:
 extra-doc-files:
     CHANGELOG.md
   , README.md
-  , hermes-bench/bench.svg
   , simdjson/LICENSE
 tested-with:
   , GHC == 9.2.8
