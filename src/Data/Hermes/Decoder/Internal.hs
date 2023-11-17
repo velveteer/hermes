@@ -76,7 +76,7 @@ import           Data.Hermes.SIMDJSON.Wrapper
 
 -- | DecoderM is some context around the IO needed by the C FFI to allocate local memory.
 -- Users have no access to the underlying IO, since this could allow decoders to launch nukes.
--- Using `Data.Hermes.decodeEither` discharges the IO and returns us to purity,
+-- Using `decodeEither` discharges the IO and returns us to purity,
 -- since we know decoding a document is referentially transparent.
 newtype DecoderM a = DecoderM { runDecoderM :: ReaderT HermesEnv IO a }
   deriving newtype (Functor, Applicative, Monad)
@@ -168,7 +168,11 @@ instance MonadFail Decoder where
   fail e = Decoder $ \_ -> fail e
 
 -- | Newtype over field decoders. This is helpful so users
--- avoid unsafe decoders like `object $ object ...`.
+-- avoid unsafe decoders like @object . object@. The simdjson
+-- iterator cannot re-enter an object due to its forward-only nature.
+-- However, simdjson provides a way to reset the iterator. See
+-- `liftObjectDecoder` if you need to run an object decoder after already
+-- starting iteration on that object.
 newtype FieldsDecoder a =
   FieldsDecoder { runFieldsDecoder :: Object -> Decoder a }
 

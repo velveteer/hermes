@@ -1,5 +1,5 @@
 const csvToMd = require('csvtomd-lib');
-const {promises: {readFile, writeFile}} = require("fs");
+const {promises: {readFile, writeFile}} = require('fs');
 const magic = require('markdown-magic');
 const path = require('path');
 

@@ -18,11 +18,10 @@ jobs:
         ghc: ['9.6', '9.4', '9.2']
         cabal: ['latest']
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        exclude:
-          - ghc: 8.10
-            os: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
       - run: mkdir artifact
       - run: mkdir artifact/${{ matrix.os }}
 
