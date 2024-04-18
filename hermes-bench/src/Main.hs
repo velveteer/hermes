@@ -20,42 +20,31 @@ import qualified Data.Map.Strict as Map
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
 import           GHC.Generics (Generic)
-import           Test.Tasty.Bench (defaultMain, bench, bgroup, nf, env)
+import           Test.Tasty.Bench (defaultMain, bench, nf)
 
 import           Data.Hermes
 import qualified Data.Hermes as H
 import qualified Data.Hermes.Aeson as H
 
 main :: IO ()
-main = defaultMain [
-  env (BS.readFile "json/persons9000.json") $ \persons ->
-  env (BS.readFile "json/twitter100.json") $ \twitter ->
-  env (evaluate . force $ genDoubles 10000 1.23456789) $ \doubles ->
-  env H.mkHermesEnv_ $ \hEnv ->
-    bgroup "Decode" [
-      bgroup "Arrays" [
-        bench "Hermes" $ nf (H.parseByteString hEnv decodeDoubles) doubles
-      , bench "Aeson" $ nf (A.D.decodeStrict @[[Double]]) doubles
-      ]
-    , bgroup "Persons" [
-        bench "Hermes" $ nf (H.parseByteString hEnv (list decodePerson)) persons
-      , bench "Aeson" $ nf (A.D.decodeStrict @[Person]) persons
-      ]
-    , bgroup "Partial Twitter" [
-        bench "Hermes" $ nf (H.parseByteString hEnv decodeTwitter) twitter
-      , bench "JsonStream" $ nf (J.parseByteString parseTwitter) twitter
-      , bench "Aeson" $ nf (A.D.decodeStrict @Twitter) twitter
-      ]
-    , bgroup "Persons (Aeson Value)" [
-        bench "Hermes" $ nf (H.parseByteString hEnv H.hValueToAeson) persons
-      , bench "Aeson" $ nf (A.D.decodeStrict @Aeson.Value) persons
-      ]
-    , bgroup "Twitter (Aeson Value)" [
-        bench "Hermes" $ nf (H.parseByteString hEnv H.hValueToAeson) twitter
-      , bench "Aeson" $ nf (A.D.decodeStrict @Aeson.Value) twitter
-      ]
+main = do
+  persons <- BS.readFile "json/persons9000.json"
+  twitter <- BS.readFile "json/twitter100.json"
+  doubles <- evaluate . force $ genDoubles 10000 1.23456789
+  hEnv <- H.mkHermesEnv_
+  defaultMain
+    [ bench "Hermes Arrays" $ nf (H.parseByteString hEnv decodeDoubles) doubles
+    , bench "Aeson Arrays" $ nf (A.D.decodeStrict @[[Double]]) doubles
+    , bench "Hermes Persons" $ nf (H.parseByteString hEnv (list decodePerson)) persons
+    , bench "Aeson Persons" $ nf (A.D.decodeStrict @[Person]) persons
+    , bench "Hermes Partial Twitter" $ nf (H.parseByteString hEnv decodeTwitter) twitter
+    , bench "Aeson Partial Twitter" $ nf (A.D.decodeStrict @Twitter) twitter
+    , bench "JsonStream Partial Twitter" $ nf (J.parseByteString parseTwitter) twitter
+    , bench "Hermes Persons (Aeson Value)" $ nf (H.parseByteString hEnv H.hValueToAeson) persons
+    , bench "Aeson Persons (Aeson Value)" $ nf (A.D.decodeStrict @Aeson.Value) persons
+    , bench "Hermes Twitter (Aeson Value)" $ nf (H.parseByteString hEnv H.hValueToAeson) twitter
+    , bench "Aeson Twitter (Aeson Value)" $ nf (A.D.decodeStrict @Aeson.Value) twitter
     ]
-  ]
 
 data Person =
   Person

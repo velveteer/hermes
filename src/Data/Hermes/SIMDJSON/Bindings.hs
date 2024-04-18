@@ -44,26 +44,26 @@ import           Foreign.Ptr (FunPtr, Ptr)
 import           Data.Hermes.SIMDJSON.Types
 
 -- Constructor/destructors
-foreign import ccall unsafe "parser_init" parserInit
+foreign import ccall safe "parser_init" parserInit
   :: CSize -> IO (Ptr SIMDParser)
 
 foreign import ccall unsafe "&parser_destroy" parserDestroy
   :: FunPtr (Ptr SIMDParser -> IO ())
 
-foreign import ccall unsafe "make_document" makeDocumentImpl
+foreign import ccall safe "make_document" makeDocumentImpl
   :: IO (Ptr SIMDDocument)
 
 foreign import ccall unsafe "&delete_document" deleteDocumentImpl
   :: FunPtr (Ptr SIMDDocument -> IO ())
 
-foreign import ccall unsafe "make_input" makeInputImpl
+foreign import ccall safe "make_input" makeInputImpl
   :: CString -> CSize -> IO (Ptr PaddedString)
 
 foreign import ccall unsafe "&delete_input" deleteInputImpl
   :: FunPtr (Ptr PaddedString -> IO ())
 
 -- Document parsers
-foreign import ccall unsafe "get_document_value" getDocumentValueImpl
+foreign import ccall safe "get_document_value" getDocumentValueImpl
   :: Parser -> InputBuffer -> Document -> Value -> IO CInt
 
 foreign import ccall unsafe "at_pointer" atPointerImpl
