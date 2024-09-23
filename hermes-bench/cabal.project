@@ -3,4 +3,3 @@ packages:
   ../hermes-json.cabal
   ../hermes-aeson/hermes-aeson.cabal
 tests: True
-allow-newer: all

@@ -15,7 +15,7 @@ jobs:
     name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
     strategy:
       matrix:
-        ghc: ['9.6', '9.4', '9.2']
+        ghc: ['9.8', '9.6', '9.4']
         cabal: ['latest']
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
