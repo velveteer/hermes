@@ -12,7 +12,7 @@ extra-source-files:
 benchmark bench
   build-depends:
     aeson       >= 2.1.2.1,
-    base        >= 4.14.3 && < 4.20,
+    base        >= 4.14.3 && < 4.21,
     bytestring  >= 0.10.12 && < 0.13,
     deepseq     >= 1.4.4 && < 1.6,
     containers  >= 0.6.5 && < 0.8,
