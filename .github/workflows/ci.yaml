@@ -15,7 +15,7 @@ jobs:
     name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
     strategy:
       matrix:
-        ghc: ['9.8', '9.6', '9.4']
+        ghc: ['9.10', '9.8', '9.6']
         cabal: ['latest']
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
@@ -26,7 +26,7 @@ jobs:
       - run: mkdir artifact/${{ matrix.os }}
 
       - id: setup-haskell
-        uses: haskell/actions/setup@v2
+        uses: haskell-actions/setup@v2
         with:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: ${{ matrix.cabal }}
@@ -53,6 +53,7 @@ jobs:
         with:
           name: hermes-json-${{ github.sha }}
           path: artifact
+          overwrite: true
 
   release:
     needs: ci
@@ -61,7 +62,7 @@ jobs:
     steps:
 
       - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: hermes-json-${{ github.sha }}
           path: artifact
