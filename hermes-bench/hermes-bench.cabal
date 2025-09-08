@@ -15,7 +15,7 @@ benchmark bench
     base        >= 4.14.3 && < 4.21,
     bytestring  >= 0.10.12 && < 0.13,
     deepseq     >= 1.4.4 && < 1.6,
-    containers  >= 0.6.5 && < 0.8,
+    containers  >= 0.6.5 && < 0.9,
     json-stream >= 0.4 && < 0.6,
     scientific  >= 0.3.7 && < 0.6,
     text        >= 2.0 && < 2.2,

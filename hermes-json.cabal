@@ -62,7 +62,7 @@ library
   build-depends:
     base               >= 4.13 && < 4.21,
     bytestring         >= 0.10.12 && < 0.13,
-    containers         >= 0.6.5 && < 0.7,
+    containers         >= 0.6.5 && < 0.9,
     deepseq            >= 1.4.4 && < 1.6,
     dlist              >= 0.8 && < 1.1,
     integer-conversion >= 0.1 && < 0.2,
@@ -128,7 +128,7 @@ test-suite hermes-test
     aeson          >= 2.0.1 && < 2.3,
     base,
     bytestring,
-    containers     >= 0.6.2 && < 0.7,
+    containers     >= 0.6.2 && < 0.9,
     hermes-json,
     scientific,
     text,
