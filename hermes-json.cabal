@@ -19,11 +19,9 @@ extra-doc-files:
   , README.md
   , simdjson/LICENSE
 tested-with:
-  , GHC == 9.2.8
-  , GHC == 9.4.6
-  , GHC == 9.6.2
-  , GHC == 9.8.2
-  , GHC == 9.10.2
+    GHC == 9.10.2
+  , GHC == 9.12.3
+  , GHC == 9.14.1
 source-repository head
   type: git
   location: git@github.com:velveteer/hermes.git
@@ -60,7 +58,7 @@ library
     Data.Hermes.Decoder.Internal
     Data.Hermes.Decoder.Internal.Scientific
   build-depends:
-    base               >= 4.13 && < 4.21,
+    base               >= 4.13 && < 4.23,
     bytestring         >= 0.10.12 && < 0.13,
     containers         >= 0.6.5 && < 0.9,
     deepseq            >= 1.4.4 && < 1.6,
@@ -71,7 +69,7 @@ library
     text               >= 2.0 && < 2.2,
     text-iso8601       >= 0.1 && < 0.2,
     transformers       >= 0.5.6 && < 0.7,
-    time               >= 1.9.3 && < 1.13,
+    time               >= 1.9.3 && < 1.16,
     time-compat        >= 1.9.5 && < 1.10,
     vector             >= 0.12.3.1 && < 0.14
 
@@ -132,7 +130,7 @@ test-suite hermes-test
     hermes-json,
     scientific,
     text,
-    hedgehog       >= 1.0.5 && < 1.5,
+    hedgehog       >= 1.0.5 && < 1.8,
     tasty          >= 1.4.2 && < 1.6,
     tasty-hunit    >= 0.10.0 && < 0.12,
     tasty-hedgehog >= 1.1.0 && < 1.5,
