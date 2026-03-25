@@ -47,13 +47,14 @@ jobs:
 
       - run: cabal check
 
-      - run: cabal sdist --output-dir artifact/${{ matrix.os }}
+      - run: cabal sdist --output-dir artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.ghc == '9.14'
 
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.ghc == '9.14'
         with:
-          name: hermes-json-${{ github.sha }}
-          path: artifact
-          overwrite: true
+          name: sdist
+          path: artifact/*.tar.gz
 
   release:
     needs: ci
@@ -61,10 +62,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - uses: actions/checkout@v3
       - uses: actions/download-artifact@v4
         with:
-          name: hermes-json-${{ github.sha }}
+          name: sdist
           path: artifact
 
       - uses: actions/upload-release-asset@v1
@@ -73,7 +73,11 @@ jobs:
         with:
           asset_content_type: application/gzip
           asset_name: hermes-json-${{ github.event.release.tag_name }}.tar.gz
-          asset_path: artifact/ubuntu-latest/hermes-json-${{ github.event.release.tag_name }}.tar.gz
+          asset_path: artifact/hermes-json-${{ github.event.release.tag_name }}.tar.gz
           upload_url: ${{ github.event.release.upload_url }}
 
-      - run: cabal upload --publish --username '${{ secrets.HACKAGE_USERNAME }}' --password '${{ secrets.HACKAGE_PASSWORD }}' artifact/ubuntu-latest/hermes-json-${{ github.event.release.tag_name }}.tar.gz
+      - id: setup-haskell
+        uses: haskell-actions/setup@v2
+        with:
+          cabal-version: latest
+      - run: cabal upload --publish --username '${{ secrets.HACKAGE_USERNAME }}' --password '${{ secrets.HACKAGE_PASSWORD }}' artifact/hermes-json-${{ github.event.release.tag_name }}.tar.gz
