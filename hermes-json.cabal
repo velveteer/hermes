@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               hermes-json
-version:            0.7.0.0
+version:            0.8.0.0
 category:           Text, Web, JSON, FFI
 synopsis:           Fast JSON decoding via simdjson C++ bindings
 description:
@@ -10,8 +10,8 @@ description:
 homepage:           https://github.com/velveteer/hermes
 license:            MIT
 license-file:       LICENSE
-author:             Josh Miller <notjoshmiller@gmail.com>
-maintainer:         Josh Miller <notjoshmiller@gmail.com>
+author:             Josh Miller <joshua.ian.miller@pm.me>
+maintainer:         Josh Miller <joshua.ian.miller@pm.me>
 extra-source-files:
     simdjson/singleheader/simdjson.h
 extra-doc-files:
@@ -19,7 +19,7 @@ extra-doc-files:
   , README.md
   , simdjson/LICENSE
 tested-with:
-    GHC == 9.10.2
+    GHC == 9.10.3
   , GHC == 9.12.3
   , GHC == 9.14.1
 source-repository head

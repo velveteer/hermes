@@ -1,2 +1,4 @@
 packages:
   ./hermes-json.cabal
+
+allow-newer: *

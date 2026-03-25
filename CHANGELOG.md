@@ -1,5 +1,13 @@
 # Revision history for hermes-json
 
+## 0.8.0.0 -- 2026-03-25
+
+Maintenance release
+
+### Changed
+* Update simdjson to 4.4.2 - thanks to @sheaf!
+* Support GHC 9.12 and 9.14
+
 ## 0.7.0.0 -- 2025-07-16
 
 This is mainly a maintenance release, no new features or fixes.
