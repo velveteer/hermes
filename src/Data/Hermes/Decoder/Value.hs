@@ -21,6 +21,7 @@ module Data.Hermes.Decoder.Value
   , objectAsMap
   , objectAsMapExcluding
   , parseScientific
+  , parseScientificText
   , scientific
   , string
   , text
@@ -28,6 +29,7 @@ module Data.Hermes.Decoder.Value
   , listOfInt
   , isNull
   , vector
+  , withAesonTape
   , withBool
   , withDouble
   , withInt
@@ -41,6 +43,7 @@ module Data.Hermes.Decoder.Value
   , withVector
   ) where
 
+import           Control.Exception (throwIO)
 import           Control.Monad ((>=>))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as Unsafe
@@ -54,6 +57,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Foreign as T
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
+import           Data.Word (Word8)
 import qualified Foreign.C.String as F
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.Marshal.Alloc as F
@@ -312,6 +316,13 @@ parseScientific = scanScientific
     (\sci rest -> if T.null rest then return sci else fail $ "Expecting end-of-input, got " ++ show (T.take 10 rest))
     fail
 {-# INLINE parseScientific #-}
+
+-- | Pure variant of 'parseScientific' suitable for use outside the 'Decoder' monad.
+parseScientificText :: Text -> Either String Sci.Scientific
+parseScientificText = scanScientific
+    (\sci rest -> if T.null rest then Right sci else Left $ "Expecting end-of-input, got " ++ show (T.take 10 rest))
+    Left
+{-# INLINE parseScientificText #-}
 
 -- | Get the simdjson type of the Value.
 getType :: Decoder ValueType
@@ -629,6 +640,68 @@ getRawText valPtr =
         str <- F.peek strPtr
         T.fromPtr (F.castPtr str) len
 {-# INLINE getRawText #-}
+
+-- | Walk a Value subtree into a contiguous tape buffer in one C++
+-- call, then hand the buffer to a Haskell consumer. The 'F.ForeignPtr'
+-- frees the buffer when no longer referenced. Strings inside the tape
+-- reference simdjson's parser buffers, kept alive by the surrounding
+-- decoder.
+withAesonTape :: (F.ForeignPtr Word8 -> Int -> IO a) -> Decoder a
+withAesonTape f = Decoder $ \val ->
+  withRunInIO $ \run ->
+    F.alloca $ \pdata ->
+      F.alloca $ \plen ->
+        F.alloca $ \plocPtr -> do
+          -- Defensive zero-init in case the FFI returns early without
+          -- writing these (the C wrapper does init them too).
+          F.poke pdata F.nullPtr
+          F.poke plen 0
+          F.poke plocPtr F.nullPtr
+          err <- buildAesonTapeImpl val pdata plen plocPtr
+          if err == 0
+            then do
+              base <- F.peek pdata
+              len  <- fmap fromIntegral $ F.peek plen
+              fp   <- F.newForeignPtr freeAesonTapeImpl base
+              f fp len
+            else do
+              -- Read the snippet first. It references the simdjson
+              -- parser buffer (not the tape), so the ordering with
+              -- the ForeignPtr below does not matter, but keeping the
+              -- snippet read out of the ForeignPtr scope makes the
+              -- lifetime intent obvious.
+              ctx <- aesonTapeErrSnippet plocPtr
+              -- Reclaim any partial buffer the walker allocated by
+              -- wrapping it in a ForeignPtr whose finalizer runs at
+              -- GC. free_aeson_tape(nullptr) is a no-op, so this is
+              -- safe even if no buffer was allocated.
+              base <- F.peek pdata
+              _fp  <- F.newForeignPtr freeAesonTapeImpl base
+              run $ handleErrorCode ctx err
+              -- handleErrorCode throws for any non-SUCCESS err. If it
+              -- ever returns here, that is a hermes-json contract
+              -- violation. Surface it as an InternalException rather
+              -- than calling the user's f on a tape we know is bad.
+              throwIO $ InternalException $ DocumentError ""
+                "withAesonTape: handleErrorCode returned despite non-zero err"
+{-# INLINE withAesonTape #-}
+
+-- | Read a snippet near the simdjson @current_location@ recorded by
+-- the bulk walker on error. ~32 bytes is safely readable thanks to
+-- padded_string padding past the document buffer. We strip trailing
+-- NUL bytes, which are typically the padded_string padding rather
+-- than meaningful source content.
+aesonTapeErrSnippet :: F.Ptr F.CString -> IO Text
+aesonTapeErrSnippet plocPtr = do
+  loc <- F.peek plocPtr
+  if loc == F.nullPtr
+    then pure ""
+    else do
+      let snipLen = 32 :: Int
+      bs <- BS.packCStringLen (loc, snipLen)
+      let trimmed = BS.dropWhileEnd (== 0x00) bs
+      pure $ "near `" <> T.decodeUtf8Lenient trimmed <> "`:"
+{-# INLINE aesonTapeErrSnippet #-}
 
 -- | Helper to work with an Array and its length parsed from a Value.
 withArrayLen :: ((Array, Int) -> DecoderM a) -> Decoder a

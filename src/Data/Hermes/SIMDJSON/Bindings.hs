@@ -5,11 +5,14 @@ module Data.Hermes.SIMDJSON.Bindings
   , arrayIterIsDoneImpl
   , arrayIterMoveNextImpl
   , atPointerImpl
+  , buildAesonTapeImpl
+  , buildAesonTapeFromDocImpl
   , deleteDocumentImpl
   , deleteInputImpl
   , doubleArrayImpl
   , findFieldImpl
   , findFieldUnorderedImpl
+  , freeAesonTapeImpl
   , getArrayFromValueImpl
   , getArrayIterFromValueImpl
   , getArrayIterLenFromValueImpl
@@ -38,6 +41,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , resetObjectImpl
   ) where
 
+import           Data.Word (Word8)
 import           Foreign.C (CBool(..), CInt(..), CSize(..), CString)
 import           Foreign.Ptr (FunPtr, Ptr)
 
@@ -151,3 +155,21 @@ foreign import ccall unsafe "get_type" getTypeImpl
 
 foreign import ccall unsafe "is_null" isNullImpl
   :: Value -> Ptr CBool -> IO CInt
+
+-- Bulk walker
+foreign import ccall safe "build_aeson_tape" buildAesonTapeImpl
+  :: Value -> Ptr (Ptr Word8) -> Ptr CSize -> Ptr CString -> IO CInt
+
+foreign import ccall unsafe "&free_aeson_tape" freeAesonTapeImpl
+  :: FunPtr (Ptr Word8 -> IO ())
+
+-- Document-level bulk walker: handles top-level scalar documents that
+-- the value-level walker would reject with SCALAR_DOCUMENT_AS_VALUE.
+foreign import ccall safe "build_aeson_tape_doc" buildAesonTapeFromDocImpl
+  :: Parser
+  -> InputBuffer
+  -> Document
+  -> Ptr (Ptr Word8)
+  -> Ptr CSize
+  -> Ptr CString
+  -> IO CInt
