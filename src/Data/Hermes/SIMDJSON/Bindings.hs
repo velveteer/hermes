@@ -23,6 +23,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , getObjectFromValueImpl
   , getObjectIterFromValueImpl
   , getRawJSONTokenImpl
+  , getRawJSONImpl
   , getStringImpl
   , getTypeImpl
   , intArrayImpl
@@ -145,6 +146,9 @@ foreign import ccall unsafe "get_bool" getBoolImpl
 
 foreign import ccall unsafe "get_raw_json_token" getRawJSONTokenImpl
   :: Value -> Ptr CString -> Ptr CSize -> IO ()
+
+foreign import ccall unsafe "get_raw_json" getRawJSONImpl
+  :: Value -> Ptr CString -> Ptr CSize -> IO CInt
 
 foreign import ccall unsafe "get_type" getTypeImpl
   :: Value -> Ptr CInt -> IO CInt

@@ -202,6 +202,20 @@ extern "C" {
     len = buf.length();
   }
 
+  error_code get_raw_json(
+      ondemand::value &val,
+      const char **out,
+      size_t &len) {
+    std::string_view buf;
+    auto error = val.raw_json().get(buf);
+    if (error) {
+      return error;
+    }
+    *out = buf.data();
+    len = buf.length();
+    return SUCCESS;
+  }
+
   error_code is_null(ondemand::value &val, bool &out) {
     return val.is_null().get(out);
   }
