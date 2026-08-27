@@ -37,7 +37,26 @@ properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
 
 units :: TestTree
-units = testGroup "Units" [altCases, objectFields]
+units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess]
+
+dependentObjectFold :: TestTree
+dependentObjectFold = testCase "dependent object fold" $
+  decodeEither
+    (objectFold (0 :: Int) $ \key total ->
+      case key of
+        "add" -> (+ total) <$> int
+        "enabled" -> (\value -> if value then total + 100 else total) <$> bool
+        _ -> total <$ withRawJsonByteString (const (pure ())))
+    "{\"add\":2,\"ignored\":{\"nested\":[1,2]},\"enabled\":true,\"add\":3}"
+    @?= Right 105
+
+rawJsonAccess :: TestTree
+rawJsonAccess = testCase "complete raw JSON access" $
+  decodeEither
+    (object $ atKey "payload" $
+      withRawJsonByteString (\bytes -> pure bytes))
+    "{\"payload\":{\"nested\":[1,true,null]}}"
+    @?= Right "{\"nested\":[1,true,null]}"
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $

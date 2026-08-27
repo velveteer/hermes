@@ -18,6 +18,7 @@ module Data.Hermes.Decoder.Value
   , nullable
   , object
   , objectAsKeyValues
+  , objectFold
   , objectAsMap
   , objectAsMapExcluding
   , parseScientific
@@ -33,6 +34,7 @@ module Data.Hermes.Decoder.Value
   , withInt
   , withObjectAsMap
   , withRawByteString
+  , withRawJsonByteString
   , withRawText
   , withScientific
   , withString
@@ -114,6 +116,16 @@ withBool f = Decoder $ \val -> getBool val >>= \b -> runDecoder (f b) val
 withRawByteString :: (BS.ByteString -> Decoder a) -> Decoder a
 withRawByteString f = Decoder $ \val -> getRawByteString val >>= \b -> runDecoder (f b) val
 {-# INLINE withRawByteString #-}
+
+-- | Helper to work with the complete raw JSON representation of the current
+-- value. Unlike 'withRawByteString', this consumes and returns a complete
+-- nested array or object rather than only its opening token.
+withRawJsonByteString :: (BS.ByteString -> Decoder a) -> Decoder a
+withRawJsonByteString f =
+  Decoder $ \val ->
+    getRawJsonByteString val >>= \bytes ->
+      runDecoder (f bytes) val
+{-# INLINE withRawJsonByteString #-}
 
 -- | Helper to work with the raw ByteString of the JSON token parsed from the given Value.
 withRawText :: (Text -> Decoder a) -> Decoder a
@@ -207,6 +219,17 @@ objectAsKeyValues
   -> Decoder [(k, v)]
 objectAsKeyValues kf vf = withObjectIter $ iterateOverFields kf vf
 {-# INLINE objectAsKeyValues #-}
+
+-- | Fold over an object once, selecting the value decoder from the current
+-- key and accumulator. This supports dependent object codecs without
+-- materialising a key/value list or rescanning the object.
+objectFold
+  :: state
+  -> (Text -> state -> Decoder state)
+  -> Decoder state
+objectFold initial step =
+  withObjectIter $ iterateOverFieldsFold initial step
+{-# INLINE objectFold #-}
 
 -- | Parse an object into a strict `Map`.
 objectAsMap
@@ -516,6 +539,32 @@ iterateOverFields fk fv iterPtr =
           pure $ DList.toList acc
 {-# INLINE iterateOverFields #-}
 
+iterateOverFieldsFold
+  :: state
+  -> (Text -> state -> Decoder state)
+  -> ObjectIter
+  -> DecoderM state
+iterateOverFieldsFold initial step iterPtr =
+  withRunInIO $ \run ->
+    F.alloca $ \lenPtr ->
+      F.alloca $ \keyPtr ->
+        allocaValue $ \valPtr -> run $ go initial keyPtr lenPtr valPtr
+  where
+    go !acc keyPtr lenPtr valPtr = do
+      isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
+      if not isOver
+        then do
+          err <- liftIO $ objectIterGetCurrentImpl iterPtr keyPtr lenPtr valPtr
+          handleErrorCode "" err
+          keyLength <- fmap fromIntegral . liftIO $ F.peek lenPtr
+          keyCString <- liftIO $ F.peek keyPtr
+          key <- parseTextFromCStrLen (keyCString, keyLength)
+          next <- withKey key $ runDecoder (step key acc) valPtr
+          liftIO $ objectIterMoveNextImpl iterPtr
+          go next keyPtr lenPtr valPtr
+        else pure acc
+{-# INLINE iterateOverFieldsFold #-}
+
 withUnorderedField :: Value -> Decoder a -> Object -> Text -> DecoderM a
 withUnorderedField vPtr f objPtr key =
   withRunInIO $ \run ->
@@ -618,6 +667,20 @@ getRawByteString valPtr =
         str <- F.peek strPtr
         Unsafe.unsafePackCStringLen (str, len)
 {-# INLINE getRawByteString #-}
+
+getRawJsonByteString :: Value -> DecoderM BS.ByteString
+getRawJsonByteString valPtr = do
+  (errorCode, cString, byteLength) <-
+    liftIO $
+      F.alloca $ \stringPtr ->
+        F.alloca $ \lengthPtr -> do
+          errorCode <- getRawJSONImpl valPtr stringPtr lengthPtr
+          byteLength <- fmap fromIntegral $ F.peek lengthPtr
+          cString <- F.peek stringPtr
+          pure (errorCode, cString, byteLength)
+  handleErrorCode "raw JSON" errorCode
+  liftIO $ Unsafe.unsafePackCStringLen (cString, byteLength)
+{-# INLINE getRawJsonByteString #-}
 
 getRawText :: Value -> DecoderM Text
 getRawText valPtr =

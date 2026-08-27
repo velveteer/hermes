@@ -51,6 +51,7 @@ module Data.Hermes
   , vector
   , nullable
   , objectAsKeyValues
+  , objectFold
   , objectAsMap
   , objectAsMapExcluding
   , liftObjectDecoder
@@ -84,6 +85,7 @@ module Data.Hermes
   , withVector
   -- * Raw ByteString access
   , withRawByteString
+  , withRawJsonByteString
     -- * simdjson Opaque Types
   , Array
   , ArrayIter
