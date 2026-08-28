@@ -56,12 +56,14 @@ decodePersons = H.decodeEither $ H.list personDecoder
 ```
 ### Aeson Integration
 
-While it is not recommended to use hermes if you need the full DOM, we still provide a performant interface to decode aeson `Value`s. See an example of this in the `hermes-aeson` subpackage. You could use hermes to selectively decode aeson `Value`s on demand, for example:
+While it is not recommended to use hermes if you need the full DOM, we still provide a performant interface to decode aeson `Value`s. See the `hermes-aeson` subpackage. You can use hermes to selectively decode aeson `Value`s on demand, for example:
 
 ```haskell
-> decodeEither (atPointer "/statuses/99/user/screen_name" hValueToAeson) twitter
+> decodeEither (atPointer "/statuses/99/user/screen_name" aesonValue) twitter
 Right (String "2no38mae")
 ```
+
+`aesonValue` works at any non-root JSON pointer position, scalars included. For decoding a top-level scalar document (e.g. raw `42` or `"hello"`), use `parseAesonValue` from `hermes-aeson` instead.
 
 ### Exceptions
 
@@ -85,9 +87,9 @@ footprint as small as possible.
 
 ### Specs
 
-* GHC 9.10.2 w/ -O1
+* GHC 9.10.3 w/ -O1
 * aeson-2.2
-* Apple M1 Pro
+* Apple M5 Pro
 
 ![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench/hermes-bench/bench.svg)
 

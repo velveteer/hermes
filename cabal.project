@@ -1,4 +1,5 @@
 packages:
   ./hermes-json.cabal
+  ./hermes-aeson/hermes-aeson.cabal
 
 allow-newer: *

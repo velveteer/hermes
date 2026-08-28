@@ -83,6 +83,10 @@ module Data.Hermes
   , withText
   , withType
   , withVector
+  -- * Bulk tape
+  , withAesonTape
+  -- * Scientific
+  , parseScientificText
   -- * Raw ByteString access
   , withRawByteString
   , withRawJsonByteString

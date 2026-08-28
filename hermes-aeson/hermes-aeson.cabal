@@ -1,10 +1,11 @@
 cabal-version:      3.0
 name:               hermes-aeson
 version:            0.1.0.0
+synopsis:           Fast Aeson decoding via simdjson C++ bindings
 license:            MIT
 license-file:       LICENSE
-author:             Josh Miller
-maintainer:         notjoshmiller@gmail.com
+author:             Josh Miller <joshua.ian.miller@pm.me>
+maintainer:         Josh Miller <joshua.ian.miller@pm.me>
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 
@@ -12,11 +13,16 @@ library
   exposed-modules:
     Data.Hermes.Aeson
   build-depends:
-    aeson  >= 2.0.1,
-    base   >= 4.14.3,
-    hermes-json
+    aeson      >= 2.0.1,
+    base       >= 4.14.3,
+    bytestring >= 0.10.12,
+    containers >= 0.6.2,
+    hermes-json,
+    scientific >= 0.3.6,
+    text       >= 2.0,
+    vector     >= 0.12.3.1
   hs-source-dirs:   src
-  ghc-options:      -Wall -O2
+  ghc-options:      -Wall -O2 -fspecialise-aggressively -fexpose-all-unfoldings
   default-language: Haskell2010
 
 test-suite test
@@ -29,7 +35,13 @@ test-suite test
     aeson,
     base,
     bytestring,
+    deepseq,
+    hedgehog       >= 1.0.5 && < 1.8,
     hermes-aeson,
     hermes-json,
+    scientific     >= 0.3.6,
     tasty          >= 1.4.2 && < 1.6,
-    tasty-hunit    >= 0.10.0 && < 0.11
+    tasty-hedgehog >= 1.1.0 && < 1.5,
+    tasty-hunit    >= 0.10.0 && < 0.11,
+    text,
+    vector         >= 0.12.3.1

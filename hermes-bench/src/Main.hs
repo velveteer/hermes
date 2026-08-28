@@ -40,9 +40,9 @@ main = do
     , bench "Hermes Partial Twitter" $ nf (H.parseByteString hEnv decodeTwitter) twitter
     , bench "Aeson Partial Twitter" $ nf (A.D.decodeStrict @Twitter) twitter
     , bench "JsonStream Partial Twitter" $ nf (J.parseByteString parseTwitter) twitter
-    , bench "Hermes Persons (Aeson Value)" $ nf (H.parseByteString hEnv H.hValueToAeson) persons
+    , bench "Hermes Persons (Aeson Value)" $ nf (H.parseByteString hEnv H.aesonValue) persons
     , bench "Aeson Persons (Aeson Value)" $ nf (A.D.decodeStrict @Aeson.Value) persons
-    , bench "Hermes Twitter (Aeson Value)" $ nf (H.parseByteString hEnv H.hValueToAeson) twitter
+    , bench "Hermes Twitter (Aeson Value)" $ nf (H.parseByteString hEnv H.aesonValue) twitter
     , bench "Aeson Twitter (Aeson Value)" $ nf (A.D.decodeStrict @Aeson.Value) twitter
     ]
 
