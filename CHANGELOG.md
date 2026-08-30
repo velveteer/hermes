@@ -1,5 +1,12 @@
 # Revision history for hermes-json
 
+## 0.8.2.0 -- 2026-08-30
+
+### Changed
+* Require `text-iso8601 >= 0.2` to address HSEC-2026-0007, a denial of service
+  via memory exhaustion. The test suite and benchmarks now also require
+  `aeson >= 2.3.0.0`, which carries the fix for the same advisory.
+
 ## 0.8.1.0 -- 2026-08-30
 
 ### Changed

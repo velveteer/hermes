@@ -12,7 +12,7 @@ library
   exposed-modules:
     Data.Hermes.Aeson
   build-depends:
-    aeson  >= 2.0.1,
+    aeson  >= 2.3.0.0,
     base   >= 4.14.3,
     hermes-json
   hs-source-dirs:   src

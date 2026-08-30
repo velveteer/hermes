@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               hermes-json
-version:            0.8.1.0
+version:            0.8.2.0
 category:           Text, Web, JSON, FFI
 synopsis:           Fast JSON decoding via simdjson C++ bindings
 description:
@@ -67,7 +67,7 @@ library
     primitive          >= 0.7.0 && < 0.10,
     scientific         >= 0.3.6 && < 0.4,
     text               >= 2.0 && < 2.2,
-    text-iso8601       >= 0.1 && < 0.2,
+    text-iso8601       >= 0.2 && < 0.3,
     transformers       >= 0.5.6 && < 0.7,
     time               >= 1.9.3 && < 1.16,
     time-compat        >= 1.9.5 && < 1.10,
@@ -123,7 +123,7 @@ test-suite hermes-test
   main-is:          test.hs
   ghc-options: -Wall
   build-depends:
-    aeson          >= 2.0.1 && < 2.3,
+    aeson          >= 2.3.0.0 && < 2.4,
     base,
     bytestring,
     containers     >= 0.6.2 && < 0.9,
