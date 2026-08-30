@@ -1,5 +1,16 @@
 # Revision history for hermes-json
 
+## 0.8.1.0 -- 2026-08-30
+
+### Changed
+* Update simdjson to 4.6.9
+
+### Added
+* Add `objectFold` for folding over object fields with a dependent state -
+  thanks to @mpscholten!
+* Add `withRawJsonByteString` for access to the raw JSON of the current value -
+  thanks to @mpscholten!
+
 ## 0.8.0.0 -- 2026-03-25
 
 Maintenance release

@@ -60,6 +60,8 @@ jobs:
     needs: ci
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
 
       - uses: actions/download-artifact@v4
@@ -67,14 +69,14 @@ jobs:
           name: sdist
           path: artifact
 
-      - uses: actions/upload-release-asset@v1
+      - name: Upload sdist to the GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          asset_content_type: application/gzip
-          asset_name: hermes-json-${{ github.event.release.tag_name }}.tar.gz
-          asset_path: artifact/hermes-json-${{ github.event.release.tag_name }}.tar.gz
-          upload_url: ${{ github.event.release.upload_url }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release upload '${{ github.event.release.tag_name }}' \
+            'artifact/hermes-json-${{ github.event.release.tag_name }}.tar.gz' \
+            --clobber
 
       - id: setup-haskell
         uses: haskell-actions/setup@v2
