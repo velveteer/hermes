@@ -666,7 +666,7 @@ getRawByteString valPtr = do
     getRawJSONTokenImpl valPtr strPtr lenPtr
     len <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
     str <- F.peek strPtr
-    Unsafe.unsafePackCStringLen (str, len)
+    BS.packCStringLen (str, len)
 {-# INLINE getRawByteString #-}
 
 getRawJsonByteString :: Value -> DecoderM BS.ByteString
@@ -680,7 +680,7 @@ getRawJsonByteString valPtr = do
           cString <- F.peek stringPtr
           pure (errorCode, cString, byteLength)
   handleErrorCode "raw JSON" errorCode
-  liftIO $ Unsafe.unsafePackCStringLen (cString, byteLength)
+  liftIO $ BS.packCStringLen (cString, byteLength)
 {-# INLINE getRawJsonByteString #-}
 
 getRawText :: Value -> DecoderM Text

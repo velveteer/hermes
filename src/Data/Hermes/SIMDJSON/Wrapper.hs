@@ -12,7 +12,7 @@ module Data.Hermes.SIMDJSON.Wrapper
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Unsafe as Unsafe
 import           Data.Maybe (fromMaybe)
-import           Control.Exception (mask_)
+import           Control.Exception (finally, mask_)
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.Marshal.Alloc as F
 
@@ -49,7 +49,8 @@ mkSIMDPaddedStr input = mask_ $
 withInputBuffer :: ByteString -> (InputBuffer -> IO a) -> IO a
 withInputBuffer bs f = do
   pStr <- mkSIMDPaddedStr bs
-  F.withForeignPtr pStr $ f . InputBuffer
+  -- Free the copy now rather than waiting for a GC to run the finalizer.
+  F.withForeignPtr pStr (f . InputBuffer) `finally` F.finalizeForeignPtr pStr
 {-# INLINE withInputBuffer #-}
 
 allocaValue :: (Value -> IO a) -> IO a

@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import           Control.Applicative ((<|>))
+import           Control.Monad (replicateM_)
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Map.Strict (Map)
@@ -20,6 +21,7 @@ import qualified Data.Time as Time
 import qualified Data.Vector as V
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
+import           System.Mem (performGC)
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
@@ -39,7 +41,7 @@ properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType, scientificMatchesAeson]
 
 units :: TestTree
-units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess, scientificCases]
+units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess, rawOutlivesInput, scientificCases]
 
 dependentObjectFold :: TestTree
 dependentObjectFold = testCase "dependent object fold" $
@@ -90,6 +92,14 @@ scientificCases = testCase "Scientific" $ do
     @?= Left "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
   fmtErr (decodeEither (list scientific) "[1.e5]")
     @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+
+rawOutlivesInput :: TestTree
+rawOutlivesInput = testCase "raw ByteStrings outlive the input buffer" $ do
+  let decodeRaw = either (ioError . userError . show) pure . decodeEither (list $ withRawJsonByteString pure)
+  raw <- decodeRaw "[{\"a\":[1,2,3]},\"x\"]"
+  performGC
+  replicateM_ 100 $ decodeRaw "[{\"b\":[4,5,6]},\"y\"]"
+  raw @?= ["{\"a\":[1,2,3]}", "\"x\""]
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
