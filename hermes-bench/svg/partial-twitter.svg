@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" height="172" width="960.0" font-size="16" font-family="sans-serif" stroke-width="2">
+<g transform="translate(10.0 0)">
+<text fill="hsl(0, 100%, 40%)" y="22">Partial Twitter.Hermes 127  μs</text>
+<g>
+<title>127  μs ± 5.1 μs</title>
+<rect y="28" rx="5" height="22" width="62.089880846270724" fill="hsl(0, 100%, 80%)" stroke="hsl(0, 100%, 55%)" />
+<g stroke="hsl(0, 100%, 40%)"><line x1="59.61133260516199" x2="64.56842908737946" y1="39" y2="39" />
+<line x1="59.61133260516199" x2="59.61133260516199" y1="33" y2="45" />
+<line x1="64.56842908737946" x2="64.56842908737946" y1="33" y2="45" />
+</g>
+</g>
+<g fill="hsl(120, 100%, 40%)">
+<text y="77">Partial Twitter.Aeson</text>
+<text y="77" x="868.4554017606941" text-anchor="end">1.78 ms</text>
+</g>
+<g>
+<title>1.78 ms ± 147 μs</title>
+<rect y="83" rx="5" height="22" width="868.4554017606941" fill="hsl(120, 100%, 80%)" stroke="hsl(120, 100%, 55%)" />
+<g stroke="hsl(120, 100%, 40%)"><line x1="796.9108035213883" x2="940.0" y1="94" y2="94" />
+<line x1="796.9108035213883" x2="796.9108035213883" y1="88" y2="100" />
+<line x1="940.0" x2="940.0" y1="88" y2="100" />
+</g>
+</g>
+<g fill="hsl(240, 100%, 40%)">
+<text y="132">Partial Twitter.JsonStream</text>
+<text y="132" x="818.8953432835604" text-anchor="end">1.68 ms</text>
+</g>
+<g>
+<title>1.68 ms ± 108 μs</title>
+<rect y="138" rx="5" height="22" width="818.8953432835604" fill="hsl(240, 100%, 80%)" stroke="hsl(240, 100%, 55%)" />
+<g stroke="hsl(240, 100%, 40%)"><line x1="766.3530747132226" x2="871.4376118538981" y1="149" y2="149" />
+<line x1="766.3530747132226" x2="766.3530747132226" y1="143" y2="155" />
+<line x1="871.4376118538981" x2="871.4376118538981" y1="143" y2="155" />
+</g>
+</g>
+</g>
+</svg>

@@ -8,7 +8,7 @@ const markdownPath = path.join(__dirname, '../README.md');
 Promise.all([
   readFile('bench.csv'),
 ]).then(([bench]) => {
-  const benchTable = csvToMd.fromString(bench.toString());
+  const benchTable = csvToMd.fromString(bench.toString().trimEnd());
   const config = {
     transforms: {
       BENCHES(content, options) {

@@ -1,2 +1,25 @@
 #! /bin/bash
-exec cabal bench --benchmark-options '--csv=bench.csv --svg=bench.svg +RTS -T -RTS'
+# Peak memory is a process-wide high-water mark and SVG bars share one scale,
+# so each benchmark gets its own process for the CSV and each group for its SVG.
+set -euo pipefail
+
+cabal build bench:bench
+exe=$(cabal list-bin bench:bench)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+rm -rf svg
+mkdir -p svg
+echo "Name,Mean (ps),2*Stdev (ps),Allocated,Copied,Peak Memory" > bench.csv
+
+"$exe" --list-tests > "$tmp/tests"
+
+while IFS= read -r name; do
+  "$exe" -p "\$0 == \"$name\"" --csv="$tmp/one.csv" +RTS -T -RTS
+  tail -n +2 "$tmp/one.csv" >> bench.csv
+done < "$tmp/tests"
+
+cut -d. -f2 "$tmp/tests" | uniq | while IFS= read -r group; do
+  slug=$(echo "$group" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/-$//')
+  "$exe" -p "\$2 == \"$group\"" --svg="svg/$slug.svg" +RTS -T -RTS
+done
