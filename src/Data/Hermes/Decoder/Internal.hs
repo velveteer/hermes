@@ -20,6 +20,7 @@ module Data.Hermes.Decoder.Internal
   , FieldsDecoder(..)
   , asks
   , local
+  , scratch
   , decodeEither
   , decodeEitherIO
   , formatException
@@ -46,8 +47,10 @@ import           Control.Monad.Trans.Reader (ReaderT(..))
 import qualified Data.ByteString as BS
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Word (Word8)
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
+import qualified Foreign.ForeignPtr.Unsafe as F
 import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Ptr as F
 import qualified Foreign.Storable as F
@@ -105,6 +108,7 @@ data HermesEnv =
   HermesEnv
     { hParser   :: {-# UNPACK #-} !(F.ForeignPtr SIMDParser)
     , hDocument :: {-# UNPACK #-} !(F.ForeignPtr SIMDDocument)
+    , hScratch  :: {-# UNPACK #-} !(F.ForeignPtr Word8)
     , hPath     :: [Path]
     } deriving (Eq, Generic)
 
@@ -227,11 +231,12 @@ parseByteStringIO hEnv d bs =
   allocaValue $ \valPtr ->
     withInputBuffer bs $ \inputPtr -> do
       F.withForeignPtr (hParser hEnv) $ \parserPtr ->
-        F.withForeignPtr (hDocument hEnv) $ \docPtr -> do
-          err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
-          flip runReaderT hEnv{hPath=[]} . runDecoderM $ do
-            handleErrorCode "" err
-            runDecoder d valPtr
+        F.withForeignPtr (hDocument hEnv) $ \docPtr ->
+          F.withForeignPtr (hScratch hEnv) $ \_ -> do
+            err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
+            flip runReaderT hEnv{hPath=[]} . runDecoderM $ do
+              handleErrorCode "" err
+              runDecoder d valPtr
 
 -- | Allocates foreign references to a simdjson::ondemand::parser and a
 -- simdjson::ondemand::document. The optional capacity argument sets the max
@@ -245,9 +250,11 @@ mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
+  scratchBuf <- F.mallocForeignPtrBytes 16
   pure HermesEnv
     { hParser   = parser
     , hDocument = document
+    , hScratch  = scratchBuf
     , hPath     = []
     }
 
@@ -347,6 +354,12 @@ liftIO = DecoderM . lift
 asks :: (HermesEnv -> a) -> DecoderM a
 asks f = DecoderM . ReaderT $ pure . f
 {-# INLINE asks #-}
+
+-- | Two words for FFI out-parameters, shared by all primitive decoders.
+-- Read results before making another FFI call.
+scratch :: DecoderM (F.Ptr a)
+scratch = asks (F.castPtr . F.unsafeForeignPtrToPtr . hScratch)
+{-# INLINE scratch #-}
 
 local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
 local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f
