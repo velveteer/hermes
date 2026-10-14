@@ -12,29 +12,33 @@
 -- instance. Decoding a document into a scalar from a `Value` is not supported
 -- by simdjson. While simdjson can cast a document directly to a scalar, this
 -- library currently exposes no interface for this.
-
 module Data.Hermes
   ( -- * Decoding from ByteString input
     decodeEither
   , decodeEitherIO
   , parseByteString
   , parseByteStringIO
-  , Decoder(runDecoder)
-  , FieldsDecoder(runFieldsDecoder)
+  , Decoder (runDecoder)
+  , FieldsDecoder (runFieldsDecoder)
+
     -- * Decoder monad
-  , DecoderM(runDecoderM)
-  , HermesEnv(hPath, hDocument, hParser)
+  , DecoderM (runDecoderM)
+  , HermesEnv (hPath, hDocument, hParser)
   , mkHermesEnv
   , mkHermesEnv_
   , withHermesEnv
   , withHermesEnv_
+
     -- * Object field decoders
   , atKey
   , atKeyOptional
   , atKeyStrict
+
     -- * Decoders
+
     -- ** JSON pointer
   , atPointer
+
     -- ** Values
   , bool
   , char
@@ -55,7 +59,9 @@ module Data.Hermes
   , objectAsMap
   , objectAsMapExcluding
   , liftObjectDecoder
+
     -- ** Date and time
+
     -- | Parses date and time types from Data.Time using the
     -- same Text parsers as Data.Aeson via
     -- <https://hackage.haskell.org/package/text-iso8601>.
@@ -67,10 +73,12 @@ module Data.Hermes
   , localTime
   , utcTime
   , zonedTime
+
     -- * Error Types
-  , HermesException(..)
-  , DocumentError(..)
+  , HermesException (..)
+  , DocumentError (..)
   , formatException
+
     -- * Value helpers
   , getType
   , isNull
@@ -83,9 +91,11 @@ module Data.Hermes
   , withText
   , withType
   , withVector
-  -- * Raw ByteString access
+
+    -- * Raw ByteString access
   , withRawByteString
   , withRawJsonByteString
+
     -- * simdjson Opaque Types
   , Array
   , ArrayIter
@@ -94,17 +104,17 @@ module Data.Hermes
   , Object
   , Parser
   , Value
-  , ValueType(..)
+  , ValueType (..)
   ) where
 
-import           Data.Hermes.Decoder
-import           Data.Hermes.Decoder.Internal
-  ( DecoderM(runDecoderM)
-  , Decoder(runDecoder)
-  , FieldsDecoder(runFieldsDecoder)
-  , DocumentError(..)
-  , HermesEnv(hDocument, hParser, hPath)
-  , HermesException(..)
+import Data.Hermes.Decoder
+import Data.Hermes.Decoder.Internal
+  ( Decoder (runDecoder)
+  , DecoderM (runDecoderM)
+  , DocumentError (..)
+  , FieldsDecoder (runFieldsDecoder)
+  , HermesEnv (hDocument, hParser, hPath)
+  , HermesException (..)
   , decodeEither
   , decodeEitherIO
   , formatException
@@ -116,4 +126,4 @@ import           Data.Hermes.Decoder.Internal
   , withHermesEnv
   , withHermesEnv_
   )
-import           Data.Hermes.SIMDJSON.Types
+import Data.Hermes.SIMDJSON.Types

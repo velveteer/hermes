@@ -2,28 +2,28 @@
 
 module Data.Hermes.SIMDJSON.Types
   ( -- * simdjson Opaque Types
-    Array(..)
-  , ArrayIter(..)
-  , Document(..)
-  , InputBuffer(..)
+    Array (..)
+  , ArrayIter (..)
+  , Document (..)
+  , InputBuffer (..)
   , JSONArray
   , JSONArrayIter
   , JSONObject
   , JSONObjectIter
   , JSONValue
-  , Object(..)
-  , ObjectIter(..)
+  , Object (..)
+  , ObjectIter (..)
   , PaddedString
-  , Parser(..)
+  , Parser (..)
   , SIMDDocument
-  , SIMDErrorCode(..)
+  , SIMDErrorCode (..)
   , SIMDParser
-  , Value(..)
-  , ValueType(..)
+  , Value (..)
+  , ValueType (..)
   )
-  where
+where
 
-import           Foreign.Ptr (Ptr)
+import Foreign.Ptr (Ptr)
 
 -- | A reference to an opaque simdjson::ondemand::parser.
 newtype Parser = Parser (Ptr SIMDParser)
@@ -74,8 +74,8 @@ data JSONArrayIter
 data JSONObjectIter
 
 -- | Enum for simdjson errors.
-data SIMDErrorCode =
-    SUCCESS
+data SIMDErrorCode
+  = SUCCESS
   | CAPACITY
   | MEMALLOC
   | TAPE_ERROR
@@ -107,32 +107,32 @@ data SIMDErrorCode =
   | SCALAR_DOCUMENT_AS_VALUE
   | OUT_OF_BOUNDS
   | TRAILING_CONTENT
-  deriving (Eq, Show, Bounded, Enum)
+  deriving (Bounded, Enum, Eq, Show)
 
-data ValueType =
-    VArray
+data ValueType
+  = VArray
   | VObject
   | VNumber
   | VString
   | VBoolean
   | VNull
-  deriving (Eq, Bounded, Show)
+  deriving (Bounded, Eq, Show)
 
 instance Enum ValueType where
-  fromEnum
-    = \case
-    VArray   -> 1
-    VObject  -> 2
-    VNumber  -> 3
-    VString  -> 4
-    VBoolean -> 5
-    VNull    -> 6
-  toEnum
-    = \case
-    1 -> VArray
-    2 -> VObject
-    3 -> VNumber
-    4 -> VString
-    5 -> VBoolean
-    6 -> VNull
-    _ -> error "unknown int for Value type"
+  fromEnum =
+    \case
+      VArray -> 1
+      VObject -> 2
+      VNumber -> 3
+      VString -> 4
+      VBoolean -> 5
+      VNull -> 6
+  toEnum =
+    \case
+      1 -> VArray
+      2 -> VObject
+      3 -> VNumber
+      4 -> VString
+      5 -> VBoolean
+      6 -> VNull
+      _ -> error "unknown int for Value type"

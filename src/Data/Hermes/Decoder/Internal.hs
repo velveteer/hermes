@@ -1,4 +1,3 @@
-{-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,16 +7,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_HADDOCK show-extensions #-}
 
 module Data.Hermes.Decoder.Internal
-  ( DecoderM(..)
-  , DecoderPrimM(..)
-  , HermesEnv(..)
-  , HermesException(..)
-  , DocumentError(..)
-  , Path(..)
-  , Decoder(..)
-  , FieldsDecoder(..)
+  ( DecoderM (..)
+  , DecoderPrimM (..)
+  , HermesEnv (..)
+  , HermesException (..)
+  , DocumentError (..)
+  , Path (..)
+  , Decoder (..)
+  , FieldsDecoder (..)
   , asks
   , local
   , scratch
@@ -38,52 +38,52 @@ module Data.Hermes.Decoder.Internal
   , liftObjectDecoder
   ) where
 
-import           Control.Applicative (Alternative(..))
-import           Control.DeepSeq (NFData(..))
-import           Control.Exception (Exception, catch, throwIO, try)
-import           Control.Monad (when)
-import           Control.Monad.Primitive (PrimMonad(..))
-import           Control.Monad.Trans.Class (lift)
-import           Control.Monad.Trans.Reader (ReaderT(..))
+import Control.Applicative (Alternative (..))
+import Control.DeepSeq (NFData (..))
+import Control.Exception (Exception, catch, throwIO, try)
+import Control.Monad (when)
+import Control.Monad.Primitive (PrimMonad (..))
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Reader (ReaderT (..))
 import qualified Data.ByteString as BS
-import           Data.Text (Text)
+import Data.Text (Text)
 import qualified Data.Text as T
-import           Data.Word (Word8)
+import Data.Word (Word8)
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.ForeignPtr.Unsafe as F
 import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Ptr as F
 import qualified Foreign.Storable as F
-import           GHC.Generics (Generic)
+import GHC.Generics (Generic)
 import qualified System.IO.Unsafe as Unsafe
 
-import           Data.Hermes.SIMDJSON.Bindings
+import Data.Hermes.SIMDJSON.Bindings
   ( getDocumentValueImpl
   , getErrorMessageImpl
   , getTypeImpl
   , resetArrayImpl
   , resetObjectImpl
   )
-import           Data.Hermes.SIMDJSON.Types
-  ( Array(..)
-  , Document(..)
-  , Object(..)
-  , Parser(..)
+import Data.Hermes.SIMDJSON.Types
+  ( Array (..)
+  , Document (..)
+  , Object (..)
+  , Parser (..)
   , SIMDDocument
-  , SIMDErrorCode(..)
+  , SIMDErrorCode (..)
   , SIMDParser
-  , Value(..)
-  , ValueType(..)
+  , Value (..)
+  , ValueType (..)
   )
-import           Data.Hermes.SIMDJSON.Wrapper
+import Data.Hermes.SIMDJSON.Wrapper
 
 -- | DecoderM is some context around the IO needed by the C FFI to allocate local memory.
 -- Users have no access to the underlying IO, since this could allow decoders to launch nukes.
 -- Using `decodeEither` discharges the IO and returns us to purity,
 -- since we know decoding a document is referentially transparent.
-newtype DecoderM a = DecoderM { runDecoderM :: ReaderT HermesEnv IO a }
-  deriving newtype (Functor, Applicative, Monad)
+newtype DecoderM a = DecoderM {runDecoderM :: ReaderT HermesEnv IO a}
+  deriving newtype (Applicative, Functor, Monad)
 
 instance Alternative DecoderM where
   empty = fail "Unspecified error"
@@ -94,8 +94,8 @@ instance MonadFail DecoderM where
   {-# INLINE fail #-}
   fail = throwHermes . T.pack
 
-newtype DecoderPrimM a = DecoderPrimM { runDecoderPrimM :: DecoderM a }
-  deriving newtype (Functor, Applicative, Monad)
+newtype DecoderPrimM a = DecoderPrimM {runDecoderPrimM :: DecoderM a}
+  deriving newtype (Applicative, Functor, Monad)
 
 instance PrimMonad DecoderPrimM where
   type PrimState DecoderPrimM = PrimState (ReaderT HermesEnv IO)
@@ -105,26 +105,27 @@ instance PrimMonad DecoderPrimM where
 -- | Contains foreign references to the allocated simdjson::parser and
 -- simdjson::document. Also maintains state for error reporting that is updated
 -- when an object field or array value is entered.
-data HermesEnv =
-  HermesEnv
-    { hParser   :: {-# UNPACK #-} !(F.ForeignPtr SIMDParser)
-    , hDocument :: {-# UNPACK #-} !(F.ForeignPtr SIMDDocument)
-    , hScratch  :: {-# UNPACK #-} !(F.ForeignPtr Word8)
-    , hPath     :: [Path]
-    } deriving (Eq, Generic)
+data HermesEnv
+  = HermesEnv
+  { hParser :: {-# UNPACK #-} !(F.ForeignPtr SIMDParser)
+  , hDocument :: {-# UNPACK #-} !(F.ForeignPtr SIMDDocument)
+  , hScratch :: {-# UNPACK #-} !(F.ForeignPtr Word8)
+  , hPath :: [Path]
+  }
+  deriving (Eq, Generic)
 
 instance NFData HermesEnv where
-  rnf HermesEnv{..} = rnf hPath `seq` ()
+  rnf HermesEnv {..} = rnf hPath `seq` ()
 
-data Path =
-    Key Text
+data Path
+  = Key Text
   | Idx {-# UNPACK #-} !Int
   | Pointer Text
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Generic, Show)
 
 instance NFData Path
 
-newtype Decoder a = Decoder { runDecoder :: Value -> DecoderM a }
+newtype Decoder a = Decoder {runDecoder :: Value -> DecoderM a}
 
 instance Functor Decoder where
   {-# INLINE fmap #-}
@@ -147,23 +148,25 @@ instance Monad Decoder where
 instance Alternative Decoder where
   {-# INLINE (<|>) #-}
   (Decoder a) <|> (Decoder b) = Decoder $ \val -> withRunInIO $ \run ->
-    run (a val) `catch` (\(_err :: HermesException) -> do
-      valType <- F.alloca $ \ptr -> do
-        errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
-        if errCode == SUCCESS
-          then fmap (Just . toEnum . fromIntegral) $ F.peek ptr
-          else pure Nothing
-      -- Attempt to reset arrays and objects on decoding errors.
-      -- This is necessary since when iterating over arrays and objects
-      -- we do not want to re-enter the object/array. simdjson lets us
-      -- "reset" the iterator so we can parse it anew.
-      when (valType == Just VArray) $ do
-          let (Value vptr) = val
-          resetArrayImpl (Array $ F.castPtr vptr)
-      when (valType == Just VObject) $ do
-          let (Value vptr) = val
-          resetObjectImpl (Object $ F.castPtr vptr)
-      run (b val))
+    run (a val)
+      `catch` ( \(_err :: HermesException) -> do
+                  valType <- F.alloca $ \ptr -> do
+                    errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
+                    if errCode == SUCCESS
+                      then fmap (Just . toEnum . fromIntegral) $ F.peek ptr
+                      else pure Nothing
+                  -- Attempt to reset arrays and objects on decoding errors.
+                  -- This is necessary since when iterating over arrays and objects
+                  -- we do not want to re-enter the object/array. simdjson lets us
+                  -- "reset" the iterator so we can parse it anew.
+                  when (valType == Just VArray) $ do
+                    let (Value vptr) = val
+                    resetArrayImpl (Array $ F.castPtr vptr)
+                  when (valType == Just VObject) $ do
+                    let (Value vptr) = val
+                    resetObjectImpl (Object $ F.castPtr vptr)
+                  run (b val)
+              )
 
   {-# INLINE empty #-}
   empty = Decoder $ const empty
@@ -178,8 +181,8 @@ instance MonadFail Decoder where
 -- However, simdjson provides a way to reset the iterator. See
 -- `liftObjectDecoder` if you need to run an object decoder after already
 -- starting iteration on that object.
-newtype FieldsDecoder a =
-  FieldsDecoder { runFieldsDecoder :: Object -> Decoder a }
+newtype FieldsDecoder a
+  = FieldsDecoder {runFieldsDecoder :: Object -> Decoder a}
 
 instance Functor FieldsDecoder where
   {-# INLINE fmap #-}
@@ -235,7 +238,7 @@ parseByteStringIO hEnv d bs =
         F.withForeignPtr (hDocument hEnv) $ \docPtr ->
           F.withForeignPtr (hScratch hEnv) $ \_ -> do
             err <- getDocumentValueImpl (Parser parserPtr) inputPtr (Document docPtr) valPtr
-            flip runReaderT hEnv{hPath=[]} . runDecoderM $ do
+            flip runReaderT hEnv {hPath = []} . runDecoderM $ do
               handleErrorCode "" err
               runDecoder d valPtr
 
@@ -249,15 +252,16 @@ parseByteStringIO hEnv d bs =
 -- Do _not_ share a `HermesEnv` across multiple threads. Each thread should get its own.
 mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
-  parser   <- mkSIMDParser mCapacity
+  parser <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
   scratchBuf <- F.mallocForeignPtrBytes 48
-  pure HermesEnv
-    { hParser   = parser
-    , hDocument = document
-    , hScratch  = scratchBuf
-    , hPath     = []
-    }
+  pure
+    HermesEnv
+      { hParser = parser
+      , hDocument = document
+      , hScratch = scratchBuf
+      , hPath = []
+      }
 
 mkHermesEnv_ :: IO HermesEnv
 mkHermesEnv_ = mkHermesEnv Nothing
@@ -269,19 +273,19 @@ withHermesEnv_ :: (HermesEnv -> IO a) -> IO a
 withHermesEnv_ = withHermesEnv Nothing
 
 -- | The library can throw exceptions from simdjson in addition to its own exceptions.
-data HermesException =
+data HermesException
+  = -- | An exception thrown from the simdjson library.
     SIMDException !DocumentError
-    -- ^ An exception thrown from the simdjson library.
-  | InternalException !DocumentError
-    -- ^ An exception thrown from an internal library function.
-  deriving stock (Eq, Show, Generic)
+  | -- | An exception thrown from an internal library function.
+    InternalException !DocumentError
+  deriving stock (Eq, Generic, Show)
 
 instance Exception HermesException
 instance NFData HermesException
 
 formatException :: HermesException -> Text
 formatException ex = case ex of
-  SIMDException doc     -> formatDoc doc
+  SIMDException doc -> formatDoc doc
   InternalException doc -> formatDoc doc
   where
     formatDoc err
@@ -289,15 +293,15 @@ formatException ex = case ex of
       | otherwise = "Error in " <> path err <> ": " <> errorMsg err
 
 -- | Record containing all pertinent information for troubleshooting an exception.
-data DocumentError =
-  DocumentError
-    { path     :: Text
-    -- ^ The path to the current element determined by the decoder.
-    -- Formatted in the JSON Pointer standard per RFC 6901.
-    , errorMsg :: Text
-    -- ^ An error message.
-    }
-    deriving stock (Eq, Show, Generic)
+data DocumentError
+  = DocumentError
+  { path :: Text
+  -- ^ The path to the current element determined by the decoder.
+  -- Formatted in the JSON Pointer standard per RFC 6901.
+  , errorMsg :: Text
+  -- ^ An error message.
+  }
+  deriving stock (Eq, Generic, Show)
 
 instance NFData DocumentError
 
@@ -324,20 +328,20 @@ formatPath dl =
     [] -> ""
     xs -> T.concat $ fmap escapeKey xs
   where
-    els                   = reverse dl
-    escapeKey (Key txt)   = "/" <> T.concatMap escChar txt
-    escapeKey (Idx int)   = "/" <> (T.pack . show $ int)
+    els = reverse dl
+    escapeKey (Key txt) = "/" <> T.concatMap escChar txt
+    escapeKey (Idx int) = "/" <> (T.pack . show $ int)
     escapeKey (Pointer p) = p
-    escChar '/'           = "~1"
-    escChar '~'           = "~0"
-    escChar x             = T.singleton x
+    escChar '/' = "~1"
+    escChar '~' = "~0"
+    escChar x = T.singleton x
 
 handleErrorCode :: Text -> F.CInt -> DecoderM ()
 handleErrorCode pre errInt = do
   let errCode = toEnum $ fromIntegral errInt
   if errCode == SUCCESS
-  then pure ()
-  else throwErrorCode pre errInt
+    then pure ()
+    else throwErrorCode pre errInt
 {-# INLINE handleErrorCode #-}
 
 -- | Throw the simdjson error for a non-zero error code.

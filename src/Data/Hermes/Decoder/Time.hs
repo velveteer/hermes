@@ -1,5 +1,4 @@
 -- | ISO 8601 Compatibility
-
 module Data.Hermes.Decoder.Time
   ( day
   , localTime
@@ -11,22 +10,22 @@ module Data.Hermes.Decoder.Time
   , zonedTime
   ) where
 
-import qualified Data.Time.FromText as Time
-import           Data.Text (Text)
+import Data.Text (Text)
 import qualified Data.Time as Time
 import qualified Data.Time.Calendar.Month.Compat as Time
 import qualified Data.Time.Calendar.Quarter.Compat as Time
+import qualified Data.Time.FromText as Time
 import qualified Data.Time.LocalTime as Local
 
-import           Data.Hermes.Decoder.Internal (Decoder(..))
-import           Data.Hermes.Decoder.Value (withText)
+import Data.Hermes.Decoder.Internal (Decoder (..))
+import Data.Hermes.Decoder.Value (withText)
 
 -- | Run a Text parser as a Decoder.
 runParser :: (Text -> Either String a) -> Text -> Decoder a
 runParser p t =
   case p t of
     Left err -> fail $ "Could not parse date: " <> err
-    Right r  -> pure r
+    Right r -> pure r
 {-# INLINE runParser #-}
 
 -- | Parse a date of the form [+-]YYYY-MM-DD.
