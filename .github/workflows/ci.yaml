@@ -25,6 +25,14 @@ jobs:
       - run: mkdir artifact
       - run: mkdir artifact/${{ matrix.os }}
 
+      # The Command Line Tools SDK can be newer than the linker understands.
+      - if: runner.os == 'macOS'
+        run: |
+          developer_dir=/Applications/Xcode.app/Contents/Developer
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          echo "SDKROOT=$(DEVELOPER_DIR=$developer_dir xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+          DEVELOPER_DIR=$developer_dir xcrun --sdk macosx --show-sdk-version
+
       - id: setup-haskell
         uses: haskell-actions/setup@v2
         with:
