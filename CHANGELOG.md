@@ -5,6 +5,10 @@
 ### Breaking
 * Remove `parseScientific` from `Data.Hermes.Decoder.Value`. The `scientific`
   decoder now parses numbers in C++ and no longer uses a Haskell scanner.
+* `scientific` rejects numbers with a leading `+` or leading zeros, matching
+  aeson and the other number decoders.
+* `withInputBuffer` frees the padded copy of the input when its callback
+  returns. Pointers into the input must not be used after decoding.
 
 ### Changed
 * Update simdjson to 5.0.4
@@ -12,8 +16,8 @@
   allocating pinned memory on every call, which makes decoding faster and
   reduces allocation.
 * `scientific` is faster and reports `INCORRECT_TYPE` for non-number values and
-  `NUMBER_ERROR` for malformed numbers. Exponents longer than 18 digits are now
-  an error instead of silently overflowing.
+  `NUMBER_ERROR` for malformed numbers. Exponents with more than 18 significant
+  digits are now an error instead of silently overflowing.
 * `withRawByteString` and `withRawJsonByteString` return copies of the input
   bytes, so the result stays valid after decoding.
 

@@ -21,6 +21,7 @@ module Data.Hermes.Decoder.Internal
   , asks
   , local
   , scratch
+  , scratchPair
   , decodeEither
   , decodeEitherIO
   , formatException
@@ -52,7 +53,6 @@ import Data.Word (Word8)
 import qualified Foreign.C as F
 import qualified Foreign.ForeignPtr as F
 import qualified Foreign.ForeignPtr.Unsafe as F
-import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Ptr as F
 import qualified Foreign.Storable as F
 import GHC.Generics (Generic)
@@ -150,8 +150,9 @@ instance Alternative Decoder where
   (Decoder a) <|> (Decoder b) = Decoder $ \val -> withRunInIO $ \run ->
     run (a val)
       `catch` ( \(_err :: HermesException) -> do
-                  valType <- F.alloca $ \ptr -> do
-                    errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
+                  ptr <- run scratch
+                  errCode <- toEnum . fromIntegral <$> getTypeImpl val ptr
+                  valType <-
                     if errCode == SUCCESS
                       then fmap (Just . toEnum . fromIntegral) $ F.peek ptr
                       else pure Nothing
@@ -370,6 +371,14 @@ asks f = DecoderM . ReaderT $ pure . f
 scratch :: DecoderM (F.Ptr a)
 scratch = asks (F.castPtr . F.unsafeForeignPtrToPtr . hScratch)
 {-# INLINE scratch #-}
+
+-- | The first two scratch words, for calls returning a pointer and a length.
+-- Nested decoders overwrite them, so read both before running one.
+scratchPair :: DecoderM (F.Ptr a, F.Ptr b)
+scratchPair = do
+  p <- scratch
+  pure (p, F.castPtr p `F.plusPtr` 8)
+{-# INLINE scratchPair #-}
 
 local :: (HermesEnv -> HermesEnv) -> DecoderM a -> DecoderM a
 local f (DecoderM m) = DecoderM . ReaderT $ runReaderT m . f

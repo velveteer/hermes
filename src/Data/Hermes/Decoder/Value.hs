@@ -59,7 +59,6 @@ import qualified Data.Vector.Generic.Mutable as GM
 import qualified Foreign.C.String as F
 import qualified Foreign.C.Types as F
 import qualified Foreign.ForeignPtr as F
-import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Marshal.Array as F
 import qualified Foreign.Marshal.Utils as F
 import qualified Foreign.Ptr as F
@@ -329,16 +328,22 @@ scientific = Decoder $ \val -> do
   if
     | st == 0 -> do
         coef <- word 0
-        expo <- word 1
-        pure $! Sci.scientific (toInteger coef) (fromIntegral expo)
+        expo <- peekExponent out
+        pure $! Sci.scientific (toInteger coef) expo
     | st == -1 -> do
         sign <- word 0
-        expo <- word 1
+        expo <- peekExponent out
         digits <- liftIO $ (<>) <$> peekSpan out 2 <*> peekSpan out 4
         let coef = byteStringToInteger digits
-        pure $! Sci.scientific (if sign < 0 then negate coef else coef) (fromIntegral expo)
+        pure $! Sci.scientific (if sign < 0 then negate coef else coef) expo
     | otherwise -> throwErrorCode (typePrefix "scientific") st
   where
+    -- The exponent is an Int64 and may not fit in Int on 32-bit targets.
+    peekExponent out = do
+      expo <- liftIO $ F.peekElemOff out 1
+      if toInteger expo < toInteger (minBound :: Int) || toInteger expo > toInteger (maxBound :: Int)
+        then throwErrorCode (typePrefix "scientific") (fromIntegral $ fromEnum NUMBER_ERROR)
+        else pure (fromIntegral expo :: Int)
     peekSpan out i = do
       ptr <- F.peekElemOff out i
       len <- F.peekElemOff out (i + 1)
@@ -452,8 +457,8 @@ iterateOverFieldsMap
 iterateOverFieldsMap fk fv iterPtr =
   withRunInIO $ \run ->
     allocaValue $ \valPtr -> run $ do
-      keyPtr <- scratch
-      go M.empty keyPtr (F.castPtr keyPtr `F.plusPtr` 8) valPtr
+      (keyPtr, lenPtr) <- scratchPair
+      go M.empty keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -485,8 +490,8 @@ iterateOverFieldsMapExcluding
 iterateOverFieldsMapExcluding fields fk fv iterPtr =
   withRunInIO $ \run ->
     allocaValue $ \valPtr -> run $ do
-      keyPtr <- scratch
-      go M.empty keyPtr (F.castPtr keyPtr `F.plusPtr` 8) valPtr
+      (keyPtr, lenPtr) <- scratchPair
+      go M.empty keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -523,8 +528,8 @@ iterateOverFields
 iterateOverFields fk fv iterPtr =
   withRunInIO $ \run ->
     allocaValue $ \valPtr -> run $ do
-      keyPtr <- scratch
-      go DList.empty keyPtr (F.castPtr keyPtr `F.plusPtr` 8) valPtr
+      (keyPtr, lenPtr) <- scratchPair
+      go DList.empty keyPtr lenPtr valPtr
   where
     go acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -554,8 +559,8 @@ iterateOverFieldsFold
 iterateOverFieldsFold initial step iterPtr =
   withRunInIO $ \run ->
     allocaValue $ \valPtr -> run $ do
-      keyPtr <- scratch
-      go initial keyPtr (F.castPtr keyPtr `F.plusPtr` 8) valPtr
+      (keyPtr, lenPtr) <- scratchPair
+      go initial keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -639,8 +644,7 @@ getBool valPtr = do
 
 withCStringLen :: Text -> (F.CStringLen -> DecoderM a) -> Value -> DecoderM a
 withCStringLen lbl f valPtr = do
-  strPtr <- scratch
-  let lenPtr = F.castPtr strPtr `F.plusPtr` 8
+  (strPtr, lenPtr) <- scratchPair
   err <- liftIO $ getStringImpl valPtr strPtr lenPtr
   handleErrorCode (typePrefix lbl) err
   len <- fmap fromIntegral . liftIO $ F.peek (lenPtr :: F.Ptr F.CSize)
@@ -662,8 +666,7 @@ parseTextFromCStrLen (cstr, len) = liftIO $ T.fromPtr (F.castPtr cstr) (fromInte
 
 getRawByteString :: Value -> DecoderM BS.ByteString
 getRawByteString valPtr = do
-  strPtr <- scratch
-  let lenPtr = F.castPtr strPtr `F.plusPtr` 8
+  (strPtr, lenPtr) <- scratchPair
   liftIO $ do
     getRawJSONTokenImpl valPtr strPtr lenPtr
     len <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
@@ -673,22 +676,18 @@ getRawByteString valPtr = do
 
 getRawJsonByteString :: Value -> DecoderM BS.ByteString
 getRawJsonByteString valPtr = do
-  (errorCode, cString, byteLength) <-
-    liftIO $
-      F.alloca $ \stringPtr ->
-        F.alloca $ \lengthPtr -> do
-          errorCode <- getRawJSONImpl valPtr stringPtr lengthPtr
-          byteLength <- fmap fromIntegral $ F.peek lengthPtr
-          cString <- F.peek stringPtr
-          pure (errorCode, cString, byteLength)
+  (strPtr, lenPtr) <- scratchPair
+  errorCode <- liftIO $ getRawJSONImpl valPtr strPtr lenPtr
   handleErrorCode "raw JSON" errorCode
-  liftIO $ BS.packCStringLen (cString, byteLength)
+  liftIO $ do
+    byteLength <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
+    cString <- F.peek strPtr
+    BS.packCStringLen (cString, byteLength)
 {-# INLINE getRawJsonByteString #-}
 
 getRawText :: Value -> DecoderM Text
 getRawText valPtr = do
-  strPtr <- scratch
-  let lenPtr = F.castPtr strPtr `F.plusPtr` 8
+  (strPtr, lenPtr) <- scratchPair
   liftIO $ do
     getRawJSONTokenImpl valPtr strPtr lenPtr
     len <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)

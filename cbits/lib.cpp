@@ -227,14 +227,14 @@ extern "C" {
     const char *p = tok.data();
     const char *end = p + tok.size();
     auto digit = [&] { return p < end && unsigned(*p - '0') < 10; };
-    if (p == end || !(*p == '-' || *p == '+' || unsigned(*p - '0') < 10)) { return INCORRECT_TYPE; }
+    if (p == end || !(*p == '-' || unsigned(*p - '0') < 10)) { return INCORRECT_TYPE; }
     bool neg = *p == '-';
-    if (*p == '-' || *p == '+') { ++p; }
+    if (neg) { ++p; }
     uint64_t m = 0;
     const char *intStart = p;
     while (digit()) { m = m * 10 + unsigned(*p - '0'); ++p; }
     const char *intEnd = p;
-    if (intStart == intEnd) { return NUMBER_ERROR; }
+    if (intStart == intEnd || (*intStart == '0' && intEnd - intStart > 1)) { return NUMBER_ERROR; }
     const char *fracStart = p;
     const char *fracEnd = p;
     if (p < end && *p == '.') {
@@ -249,9 +249,12 @@ extern "C" {
       bool eneg = p < end && *p == '-';
       if (p < end && (*p == '+' || *p == '-')) { ++p; }
       const char *expStart = p;
+      while (p < end && *p == '0') { ++p; }
+      const char *expDigits = p;
       while (digit()) {
+        if (p - expDigits == 18) { return NUMBER_ERROR; }
         e = e * 10 + (*p - '0');
-        if (++p - expStart > 18) { return NUMBER_ERROR; }
+        ++p;
       }
       if (p == expStart) { return NUMBER_ERROR; }
       if (eneg) { e = -e; }

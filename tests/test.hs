@@ -94,13 +94,22 @@ fmtErr = either (Left . formatException) Right
 
 scientificCases :: TestTree
 scientificCases = testCase "Scientific" $ do
-  decodeEither (list scientific) "[1.5,-0.25e3,007,1E+2,+5,-123456789012345678901.5e-3]"
-    @?= Right [1.5, -250, 7, 100, 5, -123456789012345678.9015]
+  decodeEither (list scientific) "[1.5,-0.25e3,0,-0.5,1E+2,-123456789012345678901.5e-3]"
+    @?= Right [1.5, -250, 0, -0.5, 100, -123456789012345678.9015]
+  fmtErr (decodeEither (list scientific) "[007]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+  fmtErr (decodeEither (list scientific) "[+5]")
+    @?= Left
+      "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
   decodeEither (object $ atKey "a" scientific) "{ \"a\": 1.5 }" @?= Right 1.5
   fmtErr (decodeEither (list scientific) "[\"1\"]")
     @?= Left
       "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
   fmtErr (decodeEither (list scientific) "[1.e5]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+  decodeEither (list scientific) "[1e0000000000000000001,1e-100000000000000000]"
+    @?= Right [10, Sci.scientific 1 (-100000000000000000)]
+  fmtErr (decodeEither (list scientific) "[1e1000000000000000000]")
     @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
 
 rawOutlivesInput :: TestTree
