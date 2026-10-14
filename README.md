@@ -85,26 +85,26 @@ footprint as small as possible.
 
 ### Specs
 
-* GHC 9.10.2 w/ -O1
-* aeson-2.2
-* Apple M1 Pro
+* GHC 9.14.1 w/ -O1
+* aeson-2.3
+* Apple M5 Pro
 
-![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench/hermes-bench/bench.svg)
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/bench.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
-| Name                             | Mean (ps)    | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
-| -------------------------------- | ------------ | ------------ | --------- | --------- | ----------- |
-| All.Hermes Arrays                | 1238823437   | 69966216     | 4159827   | 43225     | 94371840    |
-| All.Aeson Arrays                 | 19088587500  | 1727306610   | 71612641  | 1923087   | 94371840    |
-| All.Hermes Persons               | 45510337500  | 1799699310   | 128324650 | 23251095  | 133169152   |
-| All.Aeson Persons                | 135171600000 | 13410594088  | 344109912 | 119331077 | 227540992   |
-| All.Hermes Partial Twitter       | 285580859    | 26755950     | 286206    | 248       | 227540992   |
-| All.Aeson Partial Twitter        | 2867570312   | 206853756    | 12088346  | 185157    | 227540992   |
-| All.JsonStream Partial Twitter   | 2885024218   | 182665790    | 16295467  | 14388     | 227540992   |
-| All.Hermes Persons (Aeson Value) | 120848125000 | 4797483844   | 279944292 | 105987198 | 227540992   |
-| All.Aeson Persons (Aeson Value)  | 112195950000 | 7547400244   | 272053846 | 99592364  | 247463936   |
-| All.Hermes Twitter (Aeson Value) | 2925018750   | 226059484    | 11260357  | 144688    | 247463936   |
-| All.Aeson Twitter (Aeson Value)  | 3010517968   | 124325378    | 11882027  | 196351    | 247463936   |
+| Name                             | Mean (ps)   | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
+| -------------------------------- | ----------- | ------------ | --------- | --------- | ----------- |
+| All.Hermes Arrays                | 741381542   | 44175880     | 4240288   | 55252     | 90177536    |
+| All.Aeson Arrays                 | 12145768750 | 1121919156   | 71683342  | 1967435   | 90177536    |
+| All.Hermes Persons               | 14148432812 | 1174117368   | 52408229  | 9142656   | 121634816   |
+| All.Aeson Persons                | 84338850000 | 7361359388   | 358909237 | 125758704 | 267386880   |
+| All.Hermes Partial Twitter       | 124754638   | 6599020      | 192222    | 143       | 267386880   |
+| All.Aeson Partial Twitter        | 1815670703  | 152627360    | 12796007  | 220216    | 267386880   |
+| All.JsonStream Partial Twitter   | 1716792578  | 88076620     | 16169871  | 14935     | 267386880   |
+| All.Hermes Persons (Aeson Value) | 44064987500 | 3975840666   | 149490405 | 70718249  | 267386880   |
+| All.Aeson Persons (Aeson Value)  | 65937425000 | 3770457822   | 285932809 | 93591407  | 267386880   |
+| All.Hermes Twitter (Aeson Value) | 1103935351  | 89641868     | 7171381   | 117900    | 267386880   |
+| All.Aeson Twitter (Aeson Value)  | 1876827734  | 101536702    | 12589224  | 208255    | 267386880   |
 |                                  |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 
