@@ -1,5 +1,29 @@
 # Revision history for hermes-json
 
+## 0.9.0.0 -- 2026-10-14
+
+### Breaking
+* Remove `parseScientific` from `Data.Hermes.Decoder.Value`. The `scientific`
+  decoder now parses numbers in C++ and no longer uses a Haskell scanner.
+
+### Changed
+* Update simdjson to 5.0.4
+* Primitive decoders reuse a scratch buffer for FFI results instead of
+  allocating pinned memory on every call, which makes decoding faster and
+  reduces allocation.
+* `scientific` is faster and reports `INCORRECT_TYPE` for non-number values and
+  `NUMBER_ERROR` for malformed numbers. Exponents longer than 18 digits are now
+  an error instead of silently overflowing.
+* `withRawByteString` and `withRawJsonByteString` return copies of the input
+  bytes, so the result stays valid after decoding.
+
+### Fixed
+* `scientific` no longer fails on numbers followed by whitespace, such as
+  `{"a": 1.5 }`.
+* Input buffers are freed as soon as decoding finishes. They were previously
+  freed by a GC finalizer, so decoders that allocate little on the Haskell heap
+  could grow native memory without bound.
+
 ## 0.8.2.0 -- 2026-08-30
 
 ### Changed
