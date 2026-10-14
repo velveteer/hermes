@@ -3,10 +3,10 @@
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Decoding as A.D
 import qualified Data.ByteString as BS
-import           Test.Tasty
-import           Test.Tasty.HUnit
-
 import qualified Data.Hermes as H
+import Test.Tasty
+import Test.Tasty.HUnit
+
 import qualified Data.Hermes.Aeson as H
 
 main :: IO ()

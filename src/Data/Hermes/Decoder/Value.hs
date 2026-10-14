@@ -1,7 +1,7 @@
-{-# OPTIONS_HADDOCK show-extensions #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# OPTIONS_HADDOCK show-extensions #-}
 
 module Data.Hermes.Decoder.Value
   ( atKey
@@ -21,7 +21,6 @@ module Data.Hermes.Decoder.Value
   , objectFold
   , objectAsMap
   , objectAsMapExcluding
-  , parseScientific
   , scientific
   , string
   , text
@@ -43,31 +42,31 @@ module Data.Hermes.Decoder.Value
   , withVector
   ) where
 
-import           Control.Monad ((>=>))
+import Control.Monad ((>=>))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
-import           Data.Map (Map)
+import Data.Integer.Conversion (byteStringToInteger)
+import Data.Map (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.Scientific as Sci
-import           Data.Text (Text)
+import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Foreign as T
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
 import qualified Foreign.C.String as F
+import qualified Foreign.C.Types as F
 import qualified Foreign.ForeignPtr as F
-import qualified Foreign.Marshal.Alloc as F
 import qualified Foreign.Marshal.Array as F
 import qualified Foreign.Marshal.Utils as F
 import qualified Foreign.Ptr as F
 import qualified Foreign.Storable as F
 
-import           Data.Hermes.Decoder.Internal
-import           Data.Hermes.Decoder.Internal.Scientific
-import           Data.Hermes.Decoder.Path
-import           Data.Hermes.SIMDJSON
+import Data.Hermes.Decoder.Internal
+import Data.Hermes.Decoder.Path
+import Data.Hermes.SIMDJSON
 
 -- | Decode a value at the particular JSON pointer following RFC 6901.
 -- Be careful where you use this because it rewinds the document on each
@@ -144,13 +143,11 @@ withText f = Decoder $ \val -> getText val >>= \t -> runDecoder (f t) val
 
 -- | Returns True if the Value is null.
 isNull :: Decoder Bool
-isNull = Decoder $ \valPtr ->
-  withRunInIO $ \run ->
-    F.alloca $ \ptr -> do
-      err <- isNullImpl valPtr ptr
-      run $ do
-        handleErrorCode "" err
-        fmap F.toBool . liftIO $ F.peek ptr
+isNull = Decoder $ \valPtr -> do
+  ptr <- scratch
+  err <- liftIO $ isNullImpl valPtr ptr
+  handleErrorCode "" err
+  fmap F.toBool . liftIO $ F.peek ptr
 {-# INLINE isNull #-}
 
 -- | Is more efficient by looping in C++ instead of Haskell.
@@ -162,6 +159,7 @@ listOfInt =
         err <- intArrayImpl arrPtr out
         run $ handleErrorCode "Error decoding array of ints." err
         F.peekArray len out
+
 {-# RULES "list int/listOfInt" list int = listOfInt #-}
 
 -- | Is more efficient by looping in C++ instead of Haskell.
@@ -173,6 +171,7 @@ listOfDouble =
         err <- doubleArrayImpl arrPtr out
         run $ handleErrorCode "Error decoding array of doubles." err
         F.peekArray len out
+
 {-# RULES "list double/listOfDouble" list double = listOfDouble #-}
 
 -- | Find an object field by key, where an exception is thrown
@@ -199,14 +198,14 @@ atKeyStrict key parser =
 -- | Parse a homogenous JSON array into a Haskell list.
 list :: Decoder a -> Decoder [a]
 list f = withArrayIter $ iterateOverArray f
-{-# INLINE[2] list #-}
+{-# INLINE [2] list #-}
 
 -- | Parse a homogenous JSON array into a generic `Vector`.
-vector :: G.Vector v a => Decoder a -> Decoder (v a)
+vector :: (G.Vector v a) => Decoder a -> Decoder (v a)
 vector f = withArrayLenIter $ iterateOverArrayLen f
 {-# INLINE vector #-}
 
-withVector :: G.Vector v a => Decoder a -> (v a -> Decoder a) -> Decoder a
+withVector :: (G.Vector v a) => Decoder a -> (v a -> Decoder a) -> Decoder a
 withVector inner f = Decoder $ \val -> runDecoder (vector inner) val >>= \v -> runDecoder (f v) val
 {-# INLINE withVector #-}
 
@@ -233,7 +232,7 @@ objectFold initial step =
 
 -- | Parse an object into a strict `Map`.
 objectAsMap
-  :: Ord k
+  :: (Ord k)
   => (Text -> Decoder k)
   -- ^ Parses a Text key in the Decoder monad. JSON keys are always text.
   -> Decoder v
@@ -245,7 +244,7 @@ objectAsMap kf vf = withObjectIter $ iterateOverFieldsMap kf vf
 -- | Parse an object into a strict `Map`.
 -- Skips any fields in the given list, which adds a slight performance penalty.
 objectAsMapExcluding
-  :: Ord k
+  :: (Ord k)
   => [Text]
   -- ^ List of field names to exclude.
   -> (Text -> Decoder k)
@@ -258,7 +257,7 @@ objectAsMapExcluding fields kf vf =
 {-# INLINE objectAsMapExcluding #-}
 
 withObjectAsMap
-  :: Ord k
+  :: (Ord k)
   => (Text -> Decoder k)
   -- ^ Parses a Text key in the Decoder monad. JSON keys are always text.
   -> Decoder v
@@ -308,7 +307,7 @@ bool = Decoder getBool
 -- | Parse a JSON number into a signed Haskell Int.
 int :: Decoder Int
 int = Decoder getInt
-{-# INLINE[2] int #-}
+{-# INLINE [2] int #-}
 
 -- | Parse a JSON number into an unsigned Haskell Int (Word).
 uint :: Decoder Word
@@ -318,34 +317,51 @@ uint = Decoder getUInt
 -- | Parse a JSON number into a Haskell Double.
 double :: Decoder Double
 double = Decoder getDouble
-{-# INLINE[2] double #-}
+{-# INLINE [2] double #-}
 
 -- | Parse a Scientific from a Value.
 scientific :: Decoder Sci.Scientific
-scientific = withRawText parseScientific
+scientific = Decoder $ \val -> do
+  out <- scratch
+  st <- liftIO $ getScientificImpl val out
+  let word i = liftIO $ F.peekElemOff out i
+  if
+    | st == 0 -> do
+        coef <- word 0
+        expo <- peekExponent out
+        pure $! Sci.scientific (toInteger coef) expo
+    | st == -1 -> do
+        sign <- word 0
+        expo <- peekExponent out
+        digits <- liftIO $ (<>) <$> peekSpan out 2 <*> peekSpan out 4
+        let coef = byteStringToInteger digits
+        pure $! Sci.scientific (if sign < 0 then negate coef else coef) expo
+    | otherwise -> throwErrorCode (typePrefix "scientific") st
+  where
+    -- The exponent is an Int64 and may not fit in Int on 32-bit targets.
+    peekExponent out = do
+      expo <- liftIO $ F.peekElemOff out 1
+      if toInteger expo < toInteger (minBound :: Int) || toInteger expo > toInteger (maxBound :: Int)
+        then throwErrorCode (typePrefix "scientific") (fromIntegral $ fromEnum NUMBER_ERROR)
+        else pure (fromIntegral expo :: Int)
+    peekSpan out i = do
+      ptr <- F.peekElemOff out i
+      len <- F.peekElemOff out (i + 1)
+      Unsafe.unsafePackCStringLen (F.intPtrToPtr (fromIntegral ptr), fromIntegral len)
 {-# INLINE scientific #-}
 
 withScientific :: (Sci.Scientific -> Decoder a) -> Decoder a
 withScientific f = Decoder $ \val -> runDecoder scientific val >>= \sci -> runDecoder (f sci) val
 {-# INLINE withScientific #-}
 
--- | Parse a Scientific from UTF-8 text.
-parseScientific :: Text -> Decoder Sci.Scientific
-parseScientific = scanScientific
-    (\sci rest -> if T.null rest then return sci else fail $ "Expecting end-of-input, got " ++ show (T.take 10 rest))
-    fail
-{-# INLINE parseScientific #-}
-
 -- | Get the simdjson type of the Value.
 getType :: Decoder ValueType
 getType =
-  Decoder $ \valPtr ->
-    withRunInIO $ \run ->
-      F.alloca $ \ptr -> do
-        err <- getTypeImpl valPtr ptr
-        run $ do
-          handleErrorCode "" err
-          fmap (toEnum . fromIntegral) . liftIO $ F.peek ptr
+  Decoder $ \valPtr -> do
+    ptr <- scratch
+    err <- liftIO $ getTypeImpl valPtr ptr
+    handleErrorCode "" err
+    fmap (toEnum . fromIntegral) . liftIO $ F.peek ptr
 {-# INLINE getType #-}
 
 withType :: (ValueType -> Decoder a) -> Decoder a
@@ -388,19 +404,17 @@ iterateOverArray f iterPtr =
 
 -- | Helper to work with an ArrayIter and its length.
 withArrayLenIter :: (ArrayIter -> Int -> DecoderM a) -> Decoder a
-withArrayLenIter f = Decoder $ \(Value valPtr) ->
-  withRunInIO $ \run -> do
-    F.alloca $ \outLen -> do
-      err <- getArrayIterLenFromValueImpl (Value valPtr) outLen
-      len <- fmap fromIntegral $ F.peek outLen
-      run $ do
-        handleErrorCode "" err
-        f (ArrayIter $ F.castPtr valPtr) len
+withArrayLenIter f = Decoder $ \(Value valPtr) -> do
+  outLen <- scratch
+  err <- liftIO $ getArrayIterLenFromValueImpl (Value valPtr) outLen
+  len <- fmap fromIntegral . liftIO $ F.peek outLen
+  handleErrorCode "" err
+  f (ArrayIter $ F.castPtr valPtr) len
 {-# INLINE withArrayLenIter #-}
 
 -- | Execute a function on each Value in an ArrayIter and
 -- accumulate the results into a generic `Vector`.
-iterateOverArrayLen :: G.Vector v a => Decoder a -> ArrayIter -> Int -> DecoderM (v a)
+iterateOverArrayLen :: (G.Vector v a) => Decoder a -> ArrayIter -> Int -> DecoderM (v a)
 iterateOverArrayLen f iterPtr len =
   withRunInIO $ \run ->
     allocaValue $ \valPtr -> do
@@ -435,16 +449,16 @@ withObjectIter f = Decoder $ \(Value valPtr) ->
 
 -- | Execute a function on each Field in an ObjectIter and accumulate into a `Map`.
 iterateOverFieldsMap
-  :: Ord a
+  :: (Ord a)
   => (Text -> Decoder a)
   -> Decoder b
   -> ObjectIter
   -> DecoderM (Map a b)
 iterateOverFieldsMap fk fv iterPtr =
   withRunInIO $ \run ->
-    F.alloca $ \lenPtr ->
-      F.alloca $ \keyPtr ->
-        allocaValue $ \valPtr -> run $ go M.empty keyPtr lenPtr valPtr
+    allocaValue $ \valPtr -> run $ do
+      (keyPtr, lenPtr) <- scratchPair
+      go M.empty keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -455,12 +469,11 @@ iterateOverFieldsMap fk fv iterPtr =
           kLen <- fmap fromIntegral . liftIO $ F.peek lenPtr
           kStr <- liftIO $ F.peek keyPtr
           keyTxt <- parseTextFromCStrLen (kStr, kLen)
-          (k, v)
-            <-
-              withKey keyTxt $ do
-                k <- runDecoder (fk keyTxt) valPtr
-                v <- runDecoder fv valPtr
-                pure (k, v)
+          (k, v) <-
+            withKey keyTxt $ do
+              k <- runDecoder (fk keyTxt) valPtr
+              v <- runDecoder fv valPtr
+              pure (k, v)
           liftIO $ objectIterMoveNextImpl iterPtr
           go (M.insert k v acc) keyPtr lenPtr valPtr
         else
@@ -468,7 +481,7 @@ iterateOverFieldsMap fk fv iterPtr =
 {-# INLINE iterateOverFieldsMap #-}
 
 iterateOverFieldsMapExcluding
-  :: Ord a
+  :: (Ord a)
   => [Text]
   -> (Text -> Decoder a)
   -> Decoder b
@@ -476,9 +489,9 @@ iterateOverFieldsMapExcluding
   -> DecoderM (Map a b)
 iterateOverFieldsMapExcluding fields fk fv iterPtr =
   withRunInIO $ \run ->
-    F.alloca $ \lenPtr ->
-      F.alloca $ \keyPtr ->
-        allocaValue $ \valPtr -> run $ go M.empty keyPtr lenPtr valPtr
+    allocaValue $ \valPtr -> run $ do
+      (keyPtr, lenPtr) <- scratchPair
+      go M.empty keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -494,12 +507,11 @@ iterateOverFieldsMapExcluding fields fk fv iterPtr =
               liftIO $ objectIterMoveNextImpl iterPtr
               go acc keyPtr lenPtr valPtr
             else do
-              (k, v)
-                <-
-                  withKey keyTxt $ do
-                    k <- runDecoder (fk keyTxt) valPtr
-                    v <- runDecoder fv valPtr
-                    pure (k, v)
+              (k, v) <-
+                withKey keyTxt $ do
+                  k <- runDecoder (fk keyTxt) valPtr
+                  v <- runDecoder fv valPtr
+                  pure (k, v)
               liftIO $ objectIterMoveNextImpl iterPtr
               go (M.insert k v acc) keyPtr lenPtr valPtr
         else
@@ -515,9 +527,9 @@ iterateOverFields
   -> DecoderM [(a, b)]
 iterateOverFields fk fv iterPtr =
   withRunInIO $ \run ->
-    F.alloca $ \lenPtr ->
-      F.alloca $ \keyPtr ->
-        allocaValue $ \valPtr -> run $ go DList.empty keyPtr lenPtr valPtr
+    allocaValue $ \valPtr -> run $ do
+      (keyPtr, lenPtr) <- scratchPair
+      go DList.empty keyPtr lenPtr valPtr
   where
     go acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -546,9 +558,9 @@ iterateOverFieldsFold
   -> DecoderM state
 iterateOverFieldsFold initial step iterPtr =
   withRunInIO $ \run ->
-    F.alloca $ \lenPtr ->
-      F.alloca $ \keyPtr ->
-        allocaValue $ \valPtr -> run $ go initial keyPtr lenPtr valPtr
+    allocaValue $ \valPtr -> run $ do
+      (keyPtr, lenPtr) <- scratchPair
+      go initial keyPtr lenPtr valPtr
   where
     go !acc keyPtr lenPtr valPtr = do
       isOver <- fmap F.toBool . liftIO $ objectIterIsDoneImpl iterPtr
@@ -582,9 +594,10 @@ withUnorderedOptionalField vPtr f objPtr key =
       run $ withKey key $ do
         err <- liftIO $ findFieldUnorderedImpl objPtr cstr len vPtr
         let errCode = toEnum $ fromIntegral err
-        if | errCode == SUCCESS       -> Just <$> runDecoder f vPtr
-           | errCode == NO_SUCH_FIELD -> pure Nothing
-           | otherwise                -> Nothing <$ handleErrorCode "" err
+        if
+          | errCode == SUCCESS -> Just <$> runDecoder f vPtr
+          | errCode == NO_SUCH_FIELD -> pure Nothing
+          | otherwise -> Nothing <$ handleErrorCode "" err
 {-# INLINE withUnorderedOptionalField #-}
 
 withField :: Value -> Decoder a -> Object -> Text -> DecoderM a
@@ -598,51 +611,45 @@ withField vPtr f objPtr key =
 {-# INLINE withField #-}
 
 getInt :: Value -> DecoderM Int
-getInt valPtr =
-  withRunInIO $ \run ->
-    F.alloca $ \ptr -> run $ do
-      err <- liftIO $ getIntImpl valPtr ptr
-      handleErrorCode (typePrefix "int") err
-      liftIO $ F.peek ptr
+getInt valPtr = do
+  ptr <- scratch
+  err <- liftIO $ getIntImpl valPtr ptr
+  handleErrorCode (typePrefix "int") err
+  liftIO $ F.peek ptr
 {-# INLINE getInt #-}
 
 getUInt :: Value -> DecoderM Word
-getUInt valPtr =
-  withRunInIO $ \run ->
-    F.alloca $ \ptr -> run $ do
-      err <- liftIO $ getUIntImpl valPtr ptr
-      handleErrorCode (typePrefix "unsigned int") err
-      liftIO $ F.peek ptr
+getUInt valPtr = do
+  ptr <- scratch
+  err <- liftIO $ getUIntImpl valPtr ptr
+  handleErrorCode (typePrefix "unsigned int") err
+  liftIO $ F.peek ptr
 {-# INLINE getUInt #-}
 
 getDouble :: Value -> DecoderM Double
-getDouble valPtr =
-  withRunInIO $ \run ->
-    F.alloca $ \ptr -> run $ do
-      err <- liftIO $ getDoubleImpl valPtr ptr
-      handleErrorCode (typePrefix "double") err
-      liftIO $ F.peek ptr
+getDouble valPtr = do
+  ptr <- scratch
+  err <- liftIO $ getDoubleImpl valPtr ptr
+  handleErrorCode (typePrefix "double") err
+  liftIO $ F.peek ptr
 {-# INLINE getDouble #-}
 
 getBool :: Value -> DecoderM Bool
-getBool valPtr =
-  withRunInIO $ \run ->
-    F.alloca $ \ptr -> run $ do
-      err <- liftIO $ getBoolImpl valPtr ptr
-      handleErrorCode (typePrefix "bool") err
-      fmap F.toBool . liftIO $ F.peek ptr
+getBool valPtr = do
+  ptr <- scratch
+  err <- liftIO $ getBoolImpl valPtr ptr
+  handleErrorCode (typePrefix "bool") err
+  fmap F.toBool . liftIO $ F.peek ptr
 {-# INLINE getBool #-}
 
 withCStringLen :: Text -> (F.CStringLen -> DecoderM a) -> Value -> DecoderM a
-withCStringLen lbl f valPtr =
-  withRunInIO $ \run ->
-    F.alloca $ \strPtr ->
-      F.alloca $ \lenPtr -> run $ do
-        err <- liftIO $ getStringImpl valPtr strPtr lenPtr
-        handleErrorCode (typePrefix lbl) err
-        len <- fmap fromIntegral . liftIO $ F.peek lenPtr
-        str <- liftIO $ F.peek strPtr
-        f (str, len)
+withCStringLen lbl f valPtr = do
+  (strPtr, lenPtr) <- scratchPair
+  err <- liftIO $ getStringImpl valPtr strPtr lenPtr
+  handleErrorCode (typePrefix lbl) err
+  len <- fmap fromIntegral . liftIO $ F.peek (lenPtr :: F.Ptr F.CSize)
+  str <- liftIO $ F.peek strPtr
+  f (str, len)
 {-# INLINE withCStringLen #-}
 
 getString :: Value -> DecoderM String
@@ -658,49 +665,42 @@ parseTextFromCStrLen (cstr, len) = liftIO $ T.fromPtr (F.castPtr cstr) (fromInte
 {-# INLINE parseTextFromCStrLen #-}
 
 getRawByteString :: Value -> DecoderM BS.ByteString
-getRawByteString valPtr =
-  liftIO $
-    F.alloca $ \strPtr ->
-      F.alloca $ \lenPtr -> do
-        getRawJSONTokenImpl valPtr strPtr lenPtr
-        len <- fmap fromIntegral $ F.peek lenPtr
-        str <- F.peek strPtr
-        Unsafe.unsafePackCStringLen (str, len)
+getRawByteString valPtr = do
+  (strPtr, lenPtr) <- scratchPair
+  liftIO $ do
+    getRawJSONTokenImpl valPtr strPtr lenPtr
+    len <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
+    str <- F.peek strPtr
+    BS.packCStringLen (str, len)
 {-# INLINE getRawByteString #-}
 
 getRawJsonByteString :: Value -> DecoderM BS.ByteString
 getRawJsonByteString valPtr = do
-  (errorCode, cString, byteLength) <-
-    liftIO $
-      F.alloca $ \stringPtr ->
-        F.alloca $ \lengthPtr -> do
-          errorCode <- getRawJSONImpl valPtr stringPtr lengthPtr
-          byteLength <- fmap fromIntegral $ F.peek lengthPtr
-          cString <- F.peek stringPtr
-          pure (errorCode, cString, byteLength)
+  (strPtr, lenPtr) <- scratchPair
+  errorCode <- liftIO $ getRawJSONImpl valPtr strPtr lenPtr
   handleErrorCode "raw JSON" errorCode
-  liftIO $ Unsafe.unsafePackCStringLen (cString, byteLength)
+  liftIO $ do
+    byteLength <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
+    cString <- F.peek strPtr
+    BS.packCStringLen (cString, byteLength)
 {-# INLINE getRawJsonByteString #-}
 
 getRawText :: Value -> DecoderM Text
-getRawText valPtr =
-  liftIO $
-    F.alloca $ \strPtr ->
-      F.alloca $ \lenPtr -> do
-        getRawJSONTokenImpl valPtr strPtr lenPtr
-        len <- fmap fromIntegral $ F.peek lenPtr
-        str <- F.peek strPtr
-        T.fromPtr (F.castPtr str) len
+getRawText valPtr = do
+  (strPtr, lenPtr) <- scratchPair
+  liftIO $ do
+    getRawJSONTokenImpl valPtr strPtr lenPtr
+    len <- fmap fromIntegral $ F.peek (lenPtr :: F.Ptr F.CSize)
+    str <- F.peek strPtr
+    T.fromPtr (F.castPtr str) len
 {-# INLINE getRawText #-}
 
 -- | Helper to work with an Array and its length parsed from a Value.
 withArrayLen :: ((Array, Int) -> DecoderM a) -> Decoder a
-withArrayLen f = Decoder $ \(Value val) ->
-  withRunInIO $ \run ->
-    F.alloca $ \outLen -> do
-      err <- getArrayLenFromValueImpl (Value val) outLen
-      len <- fmap fromIntegral $ F.peek outLen
-      run $ do
-        handleErrorCode (typePrefix "array") err
-        f (Array $ F.castPtr val, len)
+withArrayLen f = Decoder $ \(Value val) -> do
+  outLen <- scratch
+  err <- liftIO $ getArrayLenFromValueImpl (Value val) outLen
+  len <- fmap fromIntegral . liftIO $ F.peek outLen
+  handleErrorCode (typePrefix "array") err
+  f (Array $ F.castPtr val, len)
 {-# INLINE withArrayLen #-}

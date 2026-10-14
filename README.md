@@ -85,27 +85,44 @@ footprint as small as possible.
 
 ### Specs
 
-* GHC 9.10.2 w/ -O1
-* aeson-2.2
-* Apple M1 Pro
+* GHC 9.14.1 w/ -O1
+* aeson-2.3
+* Apple M5 Pro
 
-![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench/hermes-bench/bench.svg)
+#### Arrays
+
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/svg/arrays.svg)
+
+#### Persons
+
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/svg/persons.svg)
+
+#### Partial Twitter
+
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/svg/partial-twitter.svg)
+
+#### Persons (Aeson Value)
+
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/svg/persons-aeson-value.svg)
+
+#### Twitter (Aeson Value)
+
+![](https://raw.githubusercontent.com/velveteer/hermes/refs/heads/bench-0.9/hermes-bench/svg/twitter-aeson-value.svg)
 
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
-| Name                             | Mean (ps)    | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
-| -------------------------------- | ------------ | ------------ | --------- | --------- | ----------- |
-| All.Hermes Arrays                | 1238823437   | 69966216     | 4159827   | 43225     | 94371840    |
-| All.Aeson Arrays                 | 19088587500  | 1727306610   | 71612641  | 1923087   | 94371840    |
-| All.Hermes Persons               | 45510337500  | 1799699310   | 128324650 | 23251095  | 133169152   |
-| All.Aeson Persons                | 135171600000 | 13410594088  | 344109912 | 119331077 | 227540992   |
-| All.Hermes Partial Twitter       | 285580859    | 26755950     | 286206    | 248       | 227540992   |
-| All.Aeson Partial Twitter        | 2867570312   | 206853756    | 12088346  | 185157    | 227540992   |
-| All.JsonStream Partial Twitter   | 2885024218   | 182665790    | 16295467  | 14388     | 227540992   |
-| All.Hermes Persons (Aeson Value) | 120848125000 | 4797483844   | 279944292 | 105987198 | 227540992   |
-| All.Aeson Persons (Aeson Value)  | 112195950000 | 7547400244   | 272053846 | 99592364  | 247463936   |
-| All.Hermes Twitter (Aeson Value) | 2925018750   | 226059484    | 11260357  | 144688    | 247463936   |
-| All.Aeson Twitter (Aeson Value)  | 3010517968   | 124325378    | 11882027  | 196351    | 247463936   |
-|                                  |
+| Name                             | Mean (ps)   | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
+| -------------------------------- | ----------- | ------------ | --------- | --------- | ----------- |
+| All.Arrays.Hermes                | 736661914   | 56835868     | 4320997   | 49336     | 78643200    |
+| All.Arrays.Aeson                 | 11665968750 | 935375184    | 71682940  | 1967960   | 78643200    |
+| All.Persons.Hermes               | 14243446875 | 1005063640   | 52984155  | 9592134   | 126877696   |
+| All.Persons.Aeson                | 82948100000 | 8126094636   | 358899523 | 125070437 | 261095424   |
+| All.Partial Twitter.Hermes       | 125155444   | 3923382      | 195772    | 149       | 75497472    |
+| All.Partial Twitter.Aeson        | 1779148046  | 152850968    | 12796011  | 220186    | 74448896    |
+| All.Partial Twitter.JsonStream   | 1732640625  | 156437412    | 16170009  | 14820     | 90177536    |
+| All.Persons (Aeson Value).Hermes | 42076150000 | 4106762446   | 152298884 | 70268110  | 168820736   |
+| All.Persons (Aeson Value).Aeson  | 67366093750 | 2380713624   | 285929614 | 92447746  | 239075328   |
+| All.Twitter (Aeson Value).Hermes | 1127491406  | 93825760     | 7282920   | 122405    | 75497472    |
+| All.Twitter (Aeson Value).Aeson  | 1857667968  | 114563544    | 12589248  | 205953    | 74448896    |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 
 ## Performance Tips
@@ -113,8 +130,23 @@ footprint as small as possible.
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * Decode your object fields in order. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+* In tight loops or servers, reuse a `HermesEnv` with `parseByteString` instead of `decodeEither`.
+* Give each thread its own `HermesEnv`, or use a pool. Sharing one is safe but slower under contention.
 
-If you need to decode in tight loops or long-running processes (like a server), consider using the `withHermesEnv/mkHermesEnv` and `parseByteString` functions instead of `decodeEither`. This ensures the simdjson instances are not re-created on each decode. See the [simdjson performance docs](https://github.com/simdjson/simdjson/blob/master/doc/performance.md#performance-notes) for more info. Please ensure that you use one `HermesEnv` per thread, as simdjson is [single-threaded by default](https://github.com/simdjson/simdjson/blob/master/doc/basics.md#thread-safety).
+Pooling envs with `resource-pool`:
+
+```haskell
+import Data.ByteString (ByteString)
+import Data.Hermes
+import Data.Pool (Pool, defaultPoolConfig, newPool, withResource)
+
+-- Up to 8 envs, each dropped after 60 idle seconds.
+mkEnvPool :: IO (Pool HermesEnv)
+mkEnvPool = newPool $ defaultPoolConfig mkHermesEnv_ (const $ pure ()) 60 8
+
+decodeWithPool :: Pool HermesEnv -> Decoder a -> ByteString -> IO a
+decodeWithPool pool d bs = withResource pool $ \env -> parseByteStringIO env d bs
+```
 
 ## Limitations
 

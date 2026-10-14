@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               hermes-json
-version:            0.8.2.0
+version:            0.9.0.0
 category:           Text, Web, JSON, FFI
 synopsis:           Fast JSON decoding via simdjson C++ bindings
 description:
@@ -56,7 +56,6 @@ library
     Data.Hermes.SIMDJSON.Wrapper
   other-modules:
     Data.Hermes.Decoder.Internal
-    Data.Hermes.Decoder.Internal.Scientific
   build-depends:
     base               >= 4.13 && < 4.23,
     bytestring         >= 0.10.12 && < 0.13,

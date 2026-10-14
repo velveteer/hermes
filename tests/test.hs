@@ -6,26 +6,31 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Control.Applicative ((<|>))
+import Control.Applicative ((<|>))
+import Control.Monad (replicateM_)
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
-import           Data.Map.Strict (Map)
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Scientific (Scientific)
 import qualified Data.Scientific as Sci
-import           Data.Scientific (Scientific)
-import           Data.Text (Text)
+import Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Time as Time
 import qualified Data.Vector as V
-import           Data.Word (Word16)
-import           GHC.Generics (Generic)
-import           Hedgehog
+import Data.Word (Word16)
+import GHC.Generics (Generic)
+import Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-import           Test.Tasty
-import           Test.Tasty.HUnit
-import           Test.Tasty.Hedgehog
+import System.Mem (performGC)
+import System.Timeout (timeout)
+import Test.Tasty
+import Test.Tasty.HUnit
+import Test.Tasty.Hedgehog
 
-import           Data.Hermes
+import Data.Hermes
 
 main :: IO ()
 main = defaultMain tests
@@ -34,29 +39,98 @@ tests :: TestTree
 tests = testGroup "Tests" [properties, units]
 
 properties :: TestTree
-properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
+properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType, scientificMatchesAeson]
 
 units :: TestTree
-units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess]
+units =
+  testGroup
+    "Units"
+    [altCases, objectFields, dependentObjectFold, rawJsonAccess, rawOutlivesInput, scientificCases, nestedSameEnv]
 
 dependentObjectFold :: TestTree
-dependentObjectFold = testCase "dependent object fold" $
-  decodeEither
-    (objectFold (0 :: Int) $ \key total ->
-      case key of
-        "add" -> (+ total) <$> int
-        "enabled" -> (\value -> if value then total + 100 else total) <$> bool
-        _ -> total <$ withRawJsonByteString (const (pure ())))
-    "{\"add\":2,\"ignored\":{\"nested\":[1,2]},\"enabled\":true,\"add\":3}"
-    @?= Right 105
+dependentObjectFold =
+  testCase "dependent object fold" $
+    decodeEither
+      ( objectFold (0 :: Int) $ \key total ->
+          case key of
+            "add" -> (+ total) <$> int
+            "enabled" -> (\value -> if value then total + 100 else total) <$> bool
+            _ -> total <$ withRawJsonByteString (const (pure ()))
+      )
+      "{\"add\":2,\"ignored\":{\"nested\":[1,2]},\"enabled\":true,\"add\":3}"
+      @?= Right 105
 
 rawJsonAccess :: TestTree
-rawJsonAccess = testCase "complete raw JSON access" $
-  decodeEither
-    (object $ atKey "payload" $
-      withRawJsonByteString (\bytes -> pure bytes))
-    "{\"payload\":{\"nested\":[1,true,null]}}"
-    @?= Right "{\"nested\":[1,true,null]}"
+rawJsonAccess =
+  testCase "complete raw JSON access" $
+    decodeEither
+      ( object
+          $ atKey "payload"
+          $ withRawJsonByteString (\bytes -> pure bytes)
+      )
+      "{\"payload\":{\"nested\":[1,true,null]}}"
+      @?= Right "{\"nested\":[1,true,null]}"
+
+scientificMatchesAeson :: TestTree
+scientificMatchesAeson = testProperty "Scientific Matches Aeson" $
+  property $ do
+    num <- forAll genNumberToken
+    pad <- forAll $ Gen.element ["", " ", "\n "]
+    let input = T.encodeUtf8 $ "[" <> pad <> num <> pad <> "]"
+    either (const Nothing) Just (decodeEither (list scientific) input)
+      === (A.decodeStrict input :: Maybe [Scientific])
+  where
+    digits lo hi = Gen.text (Range.linear lo hi) Gen.digit
+    genNumberToken = do
+      sign <- Gen.element ["", "-"]
+      whole <- Gen.choice [pure "0", (<>) <$> (T.singleton <$> Gen.element ['1' .. '9']) <*> digits 0 30]
+      frac <- Gen.maybe (digits 1 30)
+      ex <-
+        Gen.maybe $
+          (\e es ds -> e <> es <> ds)
+            <$> Gen.element ["e", "E"]
+            <*> Gen.element ["", "+", "-"]
+            <*> digits 1 3
+      pure $ sign <> whole <> maybe "" ("." <>) frac <> maybe "" Prelude.id ex
+
+fmtErr :: Either HermesException a -> Either Text a
+fmtErr = either (Left . formatException) Right
+
+scientificCases :: TestTree
+scientificCases = testCase "Scientific" $ do
+  decodeEither (list scientific) "[1.5,-0.25e3,0,-0.5,1E+2,-123456789012345678901.5e-3]"
+    @?= Right [1.5, -250, 0, -0.5, 100, -123456789012345678.9015]
+  fmtErr (decodeEither (list scientific) "[007]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+  fmtErr (decodeEither (list scientific) "[+5]")
+    @?= Left
+      "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
+  decodeEither (object $ atKey "a" scientific) "{ \"a\": 1.5 }" @?= Right 1.5
+  fmtErr (decodeEither (list scientific) "[\"1\"]")
+    @?= Left
+      "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
+  fmtErr (decodeEither (list scientific) "[1.e5]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+  decodeEither (list scientific) "[1e0000000000000000001,1e-100000000000000000]"
+    @?= Right [10, Sci.scientific 1 (-100000000000000000)]
+  fmtErr (decodeEither (list scientific) "[1e1000000000000000000]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
+
+rawOutlivesInput :: TestTree
+rawOutlivesInput = testCase "raw ByteStrings outlive the input buffer" $ do
+  let decodeRaw = either (ioError . userError . show) pure . decodeEither (list $ withRawJsonByteString pure)
+  raw <- decodeRaw "[{\"a\":[1,2,3]},\"x\"]"
+  performGC
+  replicateM_ 100 $ decodeRaw "[{\"b\":[4,5,6]},\"y\"]"
+  raw @?= ["{\"a\":[1,2,3]}", "\"x\""]
+
+nestedSameEnv :: TestTree
+nestedSameEnv = testCase "decoder forcing a decode on its own env" $ do
+  env <- mkHermesEnv_
+  let inner = parseByteString env (object $ atKey "b" int) "{\"b\": 2}"
+      outer = object $ atKey "a" int >>= \a -> either (fail . show) (pure . (+ a)) inner
+  result <- timeout 5000000 $ pure $! parseByteString env outer "{\"a\": 1}"
+  result @?= Just (Right 3)
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $
@@ -82,265 +156,290 @@ rtPropOptional = testProperty "Round Trip With Aeson.ToJSON (Optional Keys)" $
 rtErrors :: TestTree
 rtErrors = testProperty "Errors Should Not Break Referential Transparency" $
   property $ do
-    p <- forAll
-       $ Gen.element
-       [ "{"
-       , "}"
-       , "{\"}"
-       , "true"
-       , "{\"key\": }"
-       , "["
-       , "]"
-       , "\x00"
-       , "{\"_id\": false }"
-       ]
+    p <-
+      forAll $
+        Gen.element
+          [ "{"
+          , "}"
+          , "{\"}"
+          , "true"
+          , "{\"key\": }"
+          , "["
+          , "]"
+          , "\x00"
+          , "{\"_id\": false }"
+          ]
     let d1 = decodeEither decodePerson p
         d2 = decodeEither decodePerson p
     d1 === d2
 
-roundtrip :: A.ToJSON a => Decoder a -> a -> PropertyT IO a
+roundtrip :: (A.ToJSON a) => Decoder a -> a -> PropertyT IO a
 roundtrip decoder =
   either (fail . show) pure . decodeEither decoder . BSL.toStrict . A.encode
 
 altCases :: TestTree
-altCases = testGroup "Alternative"
-  [ testCase "Object Iterator" $
-      decodeEither
-        (objectAsMap pure (1 <$ bool) <|> objectAsMap pure int)
-        "{ \"key1\": 1, \"key2\": 2 }"
-      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
-
-  , testCase "Array Iterator" $
-      decodeEither
-        (([1] <$ list bool) <|> list int)
-        "[1, 2, 3]"
-      @?= Right [1,2,3]
-
-  , testCase "Number Arrays (Not Iterator)" $
-      decodeEither
-        (listOfDouble <|> ([1.0] <$ listOfInt))
-        "[1, true, 3]"
-      @?= Left (SIMDException (DocumentError
-        { path = ""
-        , errorMsg = "Error decoding array of ints. \
-                      \INCORRECT_TYPE: The JSON element \
-                      \does not have the requested type."
-        }))
-
-  , testCase "Inner Array Decoder" $
-      decodeEither
-        (list ((1 <$ bool) <|> int))
-        "[1, 2, 3]"
-      @?= Right [1,2,3]
-
-  , testCase "Inner Object Decoder" $
-      decodeEither
-        (objectAsMap (\txt -> fail "nope" <|> pure txt) ((1 <$ bool) <|> int))
-        "{ \"key1\": 1, \"key2\": 2 }"
-      @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
-
-  , testCase "Alternative Keys (value error)" $
-      decodeEither
-        (object $ atKey "key1" (1 <$ bool) <|> atKey "key2" int)
-        "{ \"key1\": 1, \"key2\": 2 }"
-      @?= Right 2
-
-  , testCase "Alternative Keys (key error)" $
-      decodeEither
-        (object $ atKey "nope" int <|> atKey "key2" int)
-        "{ \"key1\": 1, \"key2\": 2 }"
-      @?= Right 2
-
-  , testCase "Alternative Objects" $
-      decodeEither
-        (object (atKey "key1" (2 <$ bool)) <|> object (atKey "key1" int))
-        "{ \"key1\": 1, \"key2\": 2 }"
-      @?= Right 1
-  ]
+altCases =
+  testGroup
+    "Alternative"
+    [ testCase "Object Iterator" $
+        decodeEither
+          (objectAsMap pure (1 <$ bool) <|> objectAsMap pure int)
+          "{ \"key1\": 1, \"key2\": 2 }"
+          @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+    , testCase "Array Iterator" $
+        decodeEither
+          (([1] <$ list bool) <|> list int)
+          "[1, 2, 3]"
+          @?= Right [1, 2, 3]
+    , testCase "Number Arrays (Not Iterator)" $
+        decodeEither
+          (listOfDouble <|> ([1.0] <$ listOfInt))
+          "[1, true, 3]"
+          @?= Left
+            ( SIMDException
+                ( DocumentError
+                    { path = ""
+                    , errorMsg =
+                        "Error decoding array of ints. \
+                        \INCORRECT_TYPE: The JSON element \
+                        \does not have the requested type."
+                    }
+                )
+            )
+    , testCase "Inner Array Decoder" $
+        decodeEither
+          (list ((1 <$ bool) <|> int))
+          "[1, 2, 3]"
+          @?= Right [1, 2, 3]
+    , testCase "Inner Object Decoder" $
+        decodeEither
+          (objectAsMap (\txt -> fail "nope" <|> pure txt) ((1 <$ bool) <|> int))
+          "{ \"key1\": 1, \"key2\": 2 }"
+          @?= Right (Map.fromList [("key1", 1), ("key2", 2)])
+    , testCase "Alternative Keys (value error)" $
+        decodeEither
+          (object $ atKey "key1" (1 <$ bool) <|> atKey "key2" int)
+          "{ \"key1\": 1, \"key2\": 2 }"
+          @?= Right 2
+    , testCase "Alternative Keys (key error)" $
+        decodeEither
+          (object $ atKey "nope" int <|> atKey "key2" int)
+          "{ \"key1\": 1, \"key2\": 2 }"
+          @?= Right 2
+    , testCase "Alternative Objects" $
+        decodeEither
+          (object (atKey "key1" (2 <$ bool)) <|> object (atKey "key1" int))
+          "{ \"key1\": 1, \"key2\": 2 }"
+          @?= Right 1
+    ]
 
 objectFields :: TestTree
-objectFields = testGroup "Object Fields"
-  [ testCase "liftObjectDecoder" $
-      decodeEither decodeFriendSlurp "{ \"id\": 1, \"first\": \"Bob\", \"last\": \"Kelso\" }"
-    @?= Right (FriendWithMap 1 (Map.fromList [("first", "Bob"), ("last", "Kelso")]))
-  ]
+objectFields =
+  testGroup
+    "Object Fields"
+    [ testCase "liftObjectDecoder" $
+        decodeEither decodeFriendSlurp "{ \"id\": 1, \"first\": \"Bob\", \"last\": \"Kelso\" }"
+          @?= Right (FriendWithMap 1 (Map.fromList [("first", "Bob"), ("last", "Kelso")]))
+    ]
 
-data Person =
-  Person
-    { _id           :: Text
-    , index         :: Int
-    , guid          :: Text
-    , isActive      :: Bool
-    , balance       :: Text
-    , picture       :: Maybe Text
-    , age           :: Word
-    , latitude      :: Double
-    , longitude     :: Double
-    , tags          :: V.Vector Text
-    , friends       :: [Friend]
-    , doubles       :: [[Double]]
-    , greeting      :: Maybe Text
-    , favoriteFruit :: Text
-    , employer      :: Employer
-    , mapOfInts     :: Map KeyType Int
-    , utcTimeField  :: Time.UTCTime
-    }
-    deriving stock (Eq, Show, Generic)
-    deriving anyclass (A.ToJSON)
+data Person
+  = Person
+  { _id :: Text
+  , index :: Int
+  , guid :: Text
+  , isActive :: Bool
+  , balance :: Text
+  , picture :: Maybe Text
+  , age :: Word
+  , latitude :: Double
+  , longitude :: Double
+  , tags :: V.Vector Text
+  , friends :: [Friend]
+  , doubles :: [[Double]]
+  , greeting :: Maybe Text
+  , favoriteFruit :: Text
+  , employer :: Employer
+  , mapOfInts :: Map KeyType Int
+  , utcTimeField :: Time.UTCTime
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (A.ToJSON)
 
-data PersonOptional =
-  PersonOptional
-    { _id           :: Maybe Text
-    , index         :: Maybe Int
-    , guid          :: Maybe Text
-    , isActive      :: Maybe Bool
-    , balance       :: Maybe Text
-    , picture       :: Maybe (Maybe Text)
-    , age           :: Maybe Word
-    , latitude      :: Maybe Double
-    , longitude     :: Maybe Double
-    , tags          :: Maybe (V.Vector Text)
-    , friends       :: Maybe [Friend]
-    , doubles       :: Maybe [[Double]]
-    , greeting      :: Maybe (Maybe Text)
-    , favoriteFruit :: Maybe Text
-    , employer      :: Maybe Employer
-    , mapOfInts     :: Maybe (Map KeyType Int)
-    , utcTimeField  :: Maybe Time.UTCTime
-    }
-    deriving stock (Eq, Show, Generic)
+data PersonOptional
+  = PersonOptional
+  { _id :: Maybe Text
+  , index :: Maybe Int
+  , guid :: Maybe Text
+  , isActive :: Maybe Bool
+  , balance :: Maybe Text
+  , picture :: Maybe (Maybe Text)
+  , age :: Maybe Word
+  , latitude :: Maybe Double
+  , longitude :: Maybe Double
+  , tags :: Maybe (V.Vector Text)
+  , friends :: Maybe [Friend]
+  , doubles :: Maybe [[Double]]
+  , greeting :: Maybe (Maybe Text)
+  , favoriteFruit :: Maybe Text
+  , employer :: Maybe Employer
+  , mapOfInts :: Maybe (Map KeyType Int)
+  , utcTimeField :: Maybe Time.UTCTime
+  }
+  deriving stock (Eq, Generic, Show)
 
 instance A.ToJSON PersonOptional where
-  toJSON = A.genericToJSON A.defaultOptions { A.omitNothingFields = True }
+  toJSON = A.genericToJSON A.defaultOptions {A.omitNothingFields = True}
 
 newtype KeyType = KeyType Text
-  deriving newtype (Eq, Ord, Show, A.ToJSON, A.ToJSONKey)
+  deriving newtype (A.ToJSON, A.ToJSONKey, Eq, Ord, Show)
 
-data Friend =
-  Friend
-    { id   :: Int
-    , name :: Text
-    }
-    deriving stock (Eq, Show, Generic)
-    deriving anyclass A.ToJSON
+data Friend
+  = Friend
+  { id :: Int
+  , name :: Text
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (A.ToJSON)
 
-data Employer =
-  Employer
-    { inefficient :: String
-    , exp :: Scientific
-    }
-    deriving stock (Eq, Show, Generic)
-    deriving anyclass A.ToJSON
+data Employer
+  = Employer
+  { inefficient :: String
+  , exp :: Scientific
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (A.ToJSON)
 
 decodePerson :: Decoder Person
-decodePerson = object $
-  Person
-    <$> atKey "_id" text
-    <*> atKey "index" int
-    <*> atKey "guid" text
-    <*> atKey "isActive" bool
-    <*> atKey "balance" text
-    <*> atKey "picture" (nullable text)
-    <*> atKey "age" uint
-    <*> atKey "latitude" double
-    <*> atKey "longitude" double
-    <*> atKey "tags" (vector text)
-    <*> atKey "friends" (list decodeFriend)
-    <*> atKey "doubles" (list (list double))
-    <*> atKey "greeting" (nullable text)
-    <*> atKey "favoriteFruit" text
-    <*> atKey "employer" decodeEmployer
-    <*> (Map.fromList <$> atKey "mapOfInts"
-          (objectAsKeyValues (pure . KeyType) int))
-    <*> atKey "utcTimeField" utcTime
+decodePerson =
+  object $
+    Person
+      <$> atKey "_id" text
+      <*> atKey "index" int
+      <*> atKey "guid" text
+      <*> atKey "isActive" bool
+      <*> atKey "balance" text
+      <*> atKey "picture" (nullable text)
+      <*> atKey "age" uint
+      <*> atKey "latitude" double
+      <*> atKey "longitude" double
+      <*> atKey "tags" (vector text)
+      <*> atKey "friends" (list decodeFriend)
+      <*> atKey "doubles" (list (list double))
+      <*> atKey "greeting" (nullable text)
+      <*> atKey "favoriteFruit" text
+      <*> atKey "employer" decodeEmployer
+      <*> ( Map.fromList
+              <$> atKey
+                "mapOfInts"
+                (objectAsKeyValues (pure . KeyType) int)
+          )
+      <*> atKey "utcTimeField" utcTime
 
 decodePersonOptional :: Decoder PersonOptional
-decodePersonOptional = object $
-  PersonOptional
-    <$> atKeyOptional "_id" text
-    <*> atKeyOptional "index" int
-    <*> atKeyOptional "guid" text
-    <*> atKeyOptional "isActive" bool
-    <*> atKeyOptional "balance" text
-    <*> atKeyOptional "picture" (nullable text)
-    <*> atKeyOptional "age" uint
-    <*> atKeyOptional "latitude" double
-    <*> atKeyOptional "longitude" double
-    <*> atKeyOptional "tags" (vector text)
-    <*> atKeyOptional "friends" (list decodeFriend)
-    <*> atKeyOptional "doubles" (list (list double))
-    <*> atKeyOptional "greeting" (nullable text)
-    <*> atKeyOptional "favoriteFruit" text
-    <*> atKeyOptional "employer" decodeEmployer
-    <*> (fmap Map.fromList <$> atKeyOptional "mapOfInts"
-          (objectAsKeyValues (pure . KeyType) int))
-    <*> atKeyOptional "utcTimeField" utcTime
+decodePersonOptional =
+  object $
+    PersonOptional
+      <$> atKeyOptional "_id" text
+      <*> atKeyOptional "index" int
+      <*> atKeyOptional "guid" text
+      <*> atKeyOptional "isActive" bool
+      <*> atKeyOptional "balance" text
+      <*> atKeyOptional "picture" (nullable text)
+      <*> atKeyOptional "age" uint
+      <*> atKeyOptional "latitude" double
+      <*> atKeyOptional "longitude" double
+      <*> atKeyOptional "tags" (vector text)
+      <*> atKeyOptional "friends" (list decodeFriend)
+      <*> atKeyOptional "doubles" (list (list double))
+      <*> atKeyOptional "greeting" (nullable text)
+      <*> atKeyOptional "favoriteFruit" text
+      <*> atKeyOptional "employer" decodeEmployer
+      <*> ( fmap Map.fromList
+              <$> atKeyOptional
+                "mapOfInts"
+                (objectAsKeyValues (pure . KeyType) int)
+          )
+      <*> atKeyOptional "utcTimeField" utcTime
 
 decodeFriend :: Decoder Friend
-decodeFriend = object $
-  Friend
-    <$> atKey "id" int
-    <*> atKey "name" text
+decodeFriend =
+  object $
+    Friend
+      <$> atKey "id" int
+      <*> atKey "name" text
 
 genPerson :: Gen Person
-genPerson = Person
-  <$> Gen.text (Range.linear 0 100) Gen.unicode
-  <*> Gen.int (Range.linear minBound maxBound)
-  <*> Gen.text (Range.linear 0 100) Gen.unicode
-  <*> Gen.bool
-  <*> Gen.text (Range.linear 0 100) Gen.unicode
-  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.word (Range.linear minBound maxBound)
-  <*> genDouble
-  <*> genDouble
-  <*> (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
-  <*> Gen.list (Range.linear 0 100) genFriend
-  <*> Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble)
-  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.text (Range.linear 0 100) Gen.unicode
-  <*> genEmployer
-  <*> Gen.map (Range.linear 0 100)
-      ((,) <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
-           <*> Gen.int (Range.linear 0 10000))
-  <*> utcTimeGenerator
+genPerson =
+  Person
+    <$> Gen.text (Range.linear 0 100) Gen.unicode
+    <*> Gen.int (Range.linear minBound maxBound)
+    <*> Gen.text (Range.linear 0 100) Gen.unicode
+    <*> Gen.bool
+    <*> Gen.text (Range.linear 0 100) Gen.unicode
+    <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.word (Range.linear minBound maxBound)
+    <*> genDouble
+    <*> genDouble
+    <*> (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
+    <*> Gen.list (Range.linear 0 100) genFriend
+    <*> Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble)
+    <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.text (Range.linear 0 100) Gen.unicode
+    <*> genEmployer
+    <*> Gen.map
+      (Range.linear 0 100)
+      ( (,)
+          <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
+          <*> Gen.int (Range.linear 0 10000)
+      )
+    <*> utcTimeGenerator
 
 genPersonOptional :: Gen PersonOptional
-genPersonOptional = PersonOptional
-  <$> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.maybe (Gen.int (Range.linear minBound maxBound))
-  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.maybe Gen.bool
-  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
-  <*> Gen.maybe (Gen.word (Range.linear 0 100))
-  <*> Gen.maybe genDouble
-  <*> Gen.maybe genDouble
-  <*> Gen.maybe (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
-  <*> Gen.maybe (Gen.list (Range.linear 0 100) genFriend)
-  <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble))
-  <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
-  <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
-  <*> Gen.maybe genEmployer
-  <*> Gen.maybe (Gen.map (Range.linear 0 100)
-      ((,) <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
-           <*> Gen.int (Range.linear 0 10000)))
-  <*> Gen.maybe utcTimeGenerator
+genPersonOptional =
+  PersonOptional
+    <$> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.maybe (Gen.int (Range.linear minBound maxBound))
+    <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.maybe Gen.bool
+    <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
+    <*> Gen.maybe (Gen.word (Range.linear 0 100))
+    <*> Gen.maybe genDouble
+    <*> Gen.maybe genDouble
+    <*> Gen.maybe (V.fromList <$> Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 100) Gen.unicode))
+    <*> Gen.maybe (Gen.list (Range.linear 0 100) genFriend)
+    <*> Gen.maybe (Gen.list (Range.linear 0 100) (Gen.list (Range.linear 0 100) genDouble))
+    <*> Gen.maybe (Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode))
+    <*> Gen.maybe (Gen.text (Range.linear 0 100) Gen.unicode)
+    <*> Gen.maybe genEmployer
+    <*> Gen.maybe
+      ( Gen.map
+          (Range.linear 0 100)
+          ( (,)
+              <$> fmap KeyType (Gen.text (Range.linear 0 100) Gen.unicode)
+              <*> Gen.int (Range.linear 0 10000)
+          )
+      )
+    <*> Gen.maybe utcTimeGenerator
 
 genFriend :: Gen Friend
-genFriend = Friend
-  <$> Gen.int (Range.linear 0 100)
-  <*> Gen.text (Range.linear 0 100) Gen.unicode
+genFriend =
+  Friend
+    <$> Gen.int (Range.linear 0 100)
+    <*> Gen.text (Range.linear 0 100) Gen.unicode
 
 genEmployer :: Gen Employer
-genEmployer = Employer
-  <$> Gen.string (Range.linear 0 1000) Gen.unicode
-  <*> genScientific
+genEmployer =
+  Employer
+    <$> Gen.string (Range.linear 0 1000) Gen.unicode
+    <*> genScientific
 
 decodeEmployer :: Decoder Employer
-decodeEmployer = object $
-  Employer
-    <$> atKey "inefficient" string
-    <*> atKey "exp" scientific
+decodeEmployer =
+  object $
+    Employer
+      <$> atKey "inefficient" string
+      <*> atKey "exp" scientific
 
 utcTimeGenerator :: Gen Time.UTCTime
 utcTimeGenerator =
@@ -357,15 +456,16 @@ dayGenerator =
 
 timeOfDayGenerator :: Gen Time.DiffTime
 timeOfDayGenerator =
-  fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000)
-    $ Gen.realFrac_ (Range.constant 0 86400)
+  fmap (\x -> fromIntegral (floor $ (x :: Time.DiffTime) * 1000000 :: Int) / 1000000) $
+    Gen.realFrac_ (Range.constant 0 86400)
 
 genDouble :: Gen Double
 genDouble =
-  Gen.double $ Range.linearFracFrom
-    0
-    (-1000000000000000000000000)
-    1000000000000000000000000
+  Gen.double $
+    Range.linearFracFrom
+      0
+      (-1000000000000000000000000)
+      1000000000000000000000000
 
 genScientific :: Gen Scientific
 genScientific = fmap Sci.fromFloatDigits genDouble
@@ -377,7 +477,7 @@ instance A.ToJSON Peano where
   toJSON (Peano 0) = A.object []
   toJSON (Peano suc) = A.object [("suc", A.toJSON (Peano $ suc - 1))]
 
-genPeano :: MonadGen m => m Peano
+genPeano :: (MonadGen m) => m Peano
 genPeano = Peano <$> Gen.word16 Range.linearBounded
 
 decodePeano :: Decoder Peano
@@ -388,14 +488,16 @@ decodePeano = object $ do
       Just (Peano subTree) -> Peano $ 1 + subTree
       Nothing -> Peano 0
 
-data FriendWithMap =
-  FriendWithMap
-    { id   :: Int
-    , rest :: Map Text Text
-    } deriving (Eq, Show)
+data FriendWithMap
+  = FriendWithMap
+  { id :: Int
+  , rest :: Map Text Text
+  }
+  deriving (Eq, Show)
 
 decodeFriendSlurp :: Decoder FriendWithMap
-decodeFriendSlurp = object $
-  FriendWithMap
-    <$> atKey "id" int
-    <*> liftObjectDecoder (objectAsMapExcluding ["id"] pure text)
+decodeFriendSlurp =
+  object $
+    FriendWithMap
+      <$> atKey "id" int
+      <*> liftObjectDecoder (objectAsMapExcluding ["id"] pure text)
