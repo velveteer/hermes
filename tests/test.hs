@@ -25,6 +25,7 @@ import Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import System.Mem (performGC)
+import System.Timeout (timeout)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Hedgehog
@@ -41,7 +42,10 @@ properties :: TestTree
 properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType, scientificMatchesAeson]
 
 units :: TestTree
-units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess, rawOutlivesInput, scientificCases]
+units =
+  testGroup
+    "Units"
+    [altCases, objectFields, dependentObjectFold, rawJsonAccess, rawOutlivesInput, scientificCases, nestedSameEnv]
 
 dependentObjectFold :: TestTree
 dependentObjectFold =
@@ -119,6 +123,14 @@ rawOutlivesInput = testCase "raw ByteStrings outlive the input buffer" $ do
   performGC
   replicateM_ 100 $ decodeRaw "[{\"b\":[4,5,6]},\"y\"]"
   raw @?= ["{\"a\":[1,2,3]}", "\"x\""]
+
+nestedSameEnv :: TestTree
+nestedSameEnv = testCase "decoder forcing a decode on its own env" $ do
+  env <- mkHermesEnv_
+  let inner = parseByteString env (object $ atKey "b" int) "{\"b\": 2}"
+      outer = object $ atKey "a" int >>= \a -> either (fail . show) (pure . (+ a)) inner
+  result <- timeout 5000000 $ pure $! parseByteString env outer "{\"a\": 1}"
+  result @?= Just (Right 3)
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $

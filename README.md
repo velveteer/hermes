@@ -94,17 +94,17 @@ footprint as small as possible.
 <!-- AUTO-GENERATED-CONTENT:START (BENCHES) -->
 | Name                             | Mean (ps)   | 2*Stdev (ps) | Allocated | Copied    | Peak Memory |
 | -------------------------------- | ----------- | ------------ | --------- | --------- | ----------- |
-| All.Hermes Arrays                | 741381542   | 44175880     | 4240288   | 55252     | 90177536    |
-| All.Aeson Arrays                 | 12145768750 | 1121919156   | 71683342  | 1967435   | 90177536    |
-| All.Hermes Persons               | 14148432812 | 1174117368   | 52408229  | 9142656   | 121634816   |
-| All.Aeson Persons                | 84338850000 | 7361359388   | 358909237 | 125758704 | 267386880   |
-| All.Hermes Partial Twitter       | 124754638   | 6599020      | 192222    | 143       | 267386880   |
-| All.Aeson Partial Twitter        | 1815670703  | 152627360    | 12796007  | 220216    | 267386880   |
-| All.JsonStream Partial Twitter   | 1716792578  | 88076620     | 16169871  | 14935     | 267386880   |
-| All.Hermes Persons (Aeson Value) | 44064987500 | 3975840666   | 149490405 | 70718249  | 267386880   |
-| All.Aeson Persons (Aeson Value)  | 65937425000 | 3770457822   | 285932809 | 93591407  | 267386880   |
-| All.Hermes Twitter (Aeson Value) | 1103935351  | 89641868     | 7171381   | 117900    | 267386880   |
-| All.Aeson Twitter (Aeson Value)  | 1876827734  | 101536702    | 12589224  | 208255    | 267386880   |
+| All.Hermes Arrays                | 759358203   | 51352698     | 4320949   | 48918     | 90177536    |
+| All.Aeson Arrays                 | 12258200000 | 868181342    | 71683327  | 1967454   | 90177536    |
+| All.Hermes Persons               | 14117021875 | 659968474    | 52983909  | 9590248   | 126877696   |
+| All.Aeson Persons                | 82923150000 | 6725198048   | 358910582 | 125067969 | 262144000   |
+| All.Hermes Partial Twitter       | 123506103   | 3286954      | 195681    | 160       | 262144000   |
+| All.Aeson Partial Twitter        | 1797751953  | 88988516     | 12796017  | 220208    | 262144000   |
+| All.JsonStream Partial Twitter   | 1691235937  | 55878988     | 16169924  | 14843     | 262144000   |
+| All.Hermes Persons (Aeson Value) | 43188325000 | 2300187226   | 152293646 | 70566775  | 262144000   |
+| All.Aeson Persons (Aeson Value)  | 67732300000 | 4761259544   | 285932372 | 93591185  | 262144000   |
+| All.Hermes Twitter (Aeson Value) | 1086656250  | 106379186    | 7282847   | 119064    | 262144000   |
+| All.Aeson Twitter (Aeson Value)  | 1861710937  | 113847304    | 12589280  | 205976    | 262144000   |
 |                                  |
 <!-- AUTO-GENERATED-CONTENT:END (BENCHES) -->
 
@@ -113,8 +113,23 @@ footprint as small as possible.
 * Decode to `Text` instead of `String` wherever possible!
 * Decode to `Int` or `Double` instead of `Scientific` if you can.
 * Decode your object fields in order. If encoding with `aeson`, you can leverage `toEncoding` to enforce ordering.
+* In tight loops or servers, reuse a `HermesEnv` with `parseByteString` instead of `decodeEither`.
+* Give each thread its own `HermesEnv`, or use a pool. Sharing one is safe but slower under contention.
 
-If you need to decode in tight loops or long-running processes (like a server), consider using the `withHermesEnv/mkHermesEnv` and `parseByteString` functions instead of `decodeEither`. This ensures the simdjson instances are not re-created on each decode. See the [simdjson performance docs](https://github.com/simdjson/simdjson/blob/master/doc/performance.md#performance-notes) for more info. Please ensure that you use one `HermesEnv` per thread, as simdjson is [single-threaded by default](https://github.com/simdjson/simdjson/blob/master/doc/basics.md#thread-safety).
+Pooling envs with `resource-pool`:
+
+```haskell
+import Data.ByteString (ByteString)
+import Data.Hermes
+import Data.Pool (Pool, defaultPoolConfig, newPool, withResource)
+
+-- Up to 8 envs, each dropped after 60 idle seconds.
+mkEnvPool :: IO (Pool HermesEnv)
+mkEnvPool = newPool $ defaultPoolConfig mkHermesEnv_ (const $ pure ()) 60 8
+
+decodeWithPool :: Pool HermesEnv -> Decoder a -> ByteString -> IO a
+decodeWithPool pool d bs = withResource pool $ \env -> parseByteStringIO env d bs
+```
 
 ## Limitations
 

@@ -40,8 +40,9 @@ module Data.Hermes.Decoder.Internal
   ) where
 
 import Control.Applicative (Alternative (..))
+import Control.Concurrent.MVar (MVar, newMVar, putMVar, tryTakeMVar)
 import Control.DeepSeq (NFData (..))
-import Control.Exception (Exception, catch, throwIO, try)
+import Control.Exception (Exception, catch, finally, mask, throwIO, try)
 import Control.Monad (when)
 import Control.Monad.Primitive (PrimMonad (..))
 import Control.Monad.Trans.Class (lift)
@@ -110,6 +111,7 @@ data HermesEnv
   { hParser :: {-# UNPACK #-} !(F.ForeignPtr SIMDParser)
   , hDocument :: {-# UNPACK #-} !(F.ForeignPtr SIMDDocument)
   , hScratch :: {-# UNPACK #-} !(F.ForeignPtr Word8)
+  , hLock :: {-# UNPACK #-} !(MVar ())
   , hPath :: [Path]
   }
   deriving (Eq, Generic)
@@ -225,14 +227,26 @@ decodeEither d bs = Unsafe.unsafeDupablePerformIO . try $ decodeEitherIO d bs
 decodeEitherIO :: Decoder a -> BS.ByteString -> IO a
 decodeEitherIO d bs = withHermesEnv_ $ \hEnv -> parseByteStringIO hEnv d bs
 
--- Given a HermesEnv, decode a strict ByteString.
+-- | Given a HermesEnv, decode a strict ByteString.
 parseByteString :: HermesEnv -> Decoder a -> BS.ByteString -> Either HermesException a
-parseByteString hEnv d bs = Unsafe.unsafeDupablePerformIO . try $ parseByteStringIO hEnv d bs
+-- Not dupable, since an abandoned duplicate could hold the env lock forever
+-- and send every later decode to a temporary env.
+parseByteString hEnv d bs = Unsafe.unsafePerformIO . try $ parseByteStringIO hEnv d bs
 {-# NOINLINE parseByteString #-}
 
--- Given a HermesEnv, decode a strict ByteString in IO.
+-- | Given a HermesEnv, decode a strict ByteString in IO.
+-- If the env is busy, decodes on a temporary env instead.
 parseByteStringIO :: HermesEnv -> Decoder a -> BS.ByteString -> IO a
-parseByteStringIO hEnv d bs =
+parseByteStringIO hEnv d bs = mask $ \restore -> do
+  -- Never wait for the lock. A decoder can force a thunk that decodes on
+  -- this env, so waiting could deadlock.
+  acquired <- tryTakeMVar (hLock hEnv)
+  case acquired of
+    Nothing -> restore (decodeEitherIO d bs)
+    Just () -> restore (parseLocked hEnv d bs) `finally` putMVar (hLock hEnv) ()
+
+parseLocked :: HermesEnv -> Decoder a -> BS.ByteString -> IO a
+parseLocked hEnv d bs =
   allocaValue $ \valPtr ->
     withInputBuffer bs $ \inputPtr -> do
       F.withForeignPtr (hParser hEnv) $ \parserPtr ->
@@ -250,17 +264,20 @@ parseByteStringIO hEnv d bs =
 -- Be careful using this, the foreign references can be finalized if the
 -- `HermesEnv` goes out of scope.
 --
--- Do _not_ share a `HermesEnv` across multiple threads. Each thread should get its own.
+-- A `HermesEnv` is safe to share across threads. A decode that finds it busy
+-- uses a temporary env, so use one per thread or a pool to keep reuse.
 mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
   scratchBuf <- F.mallocForeignPtrBytes 48
+  lock <- newMVar ()
   pure
     HermesEnv
       { hParser = parser
       , hDocument = document
       , hScratch = scratchBuf
+      , hLock = lock
       , hPath = []
       }
 

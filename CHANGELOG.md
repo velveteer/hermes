@@ -20,6 +20,9 @@
   digits are now an error instead of silently overflowing.
 * `withRawByteString` and `withRawJsonByteString` return copies of the input
   bytes, so the result stays valid after decoding.
+* `HermesEnv` holds a lock, so sharing one across threads is safe. A decode
+  that finds the env busy uses a temporary env instead of waiting. Use one env
+  per thread or a pool to keep reusing envs.
 
 ### Fixed
 * `scientific` no longer fails on numbers followed by whitespace, such as
