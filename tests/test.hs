@@ -14,6 +14,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Scientific as Sci
 import           Data.Scientific (Scientific)
 import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Time as Time
 import qualified Data.Vector as V
 import           Data.Word (Word16)
@@ -34,10 +36,10 @@ tests :: TestTree
 tests = testGroup "Tests" [properties, units]
 
 properties :: TestTree
-properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType]
+properties = testGroup "Properties" [rtProp, rtPropOptional, rtErrors, rtRecursiveDataType, scientificMatchesAeson]
 
 units :: TestTree
-units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess]
+units = testGroup "Units" [altCases, objectFields, dependentObjectFold, rawJsonAccess, scientificCases]
 
 dependentObjectFold :: TestTree
 dependentObjectFold = testCase "dependent object fold" $
@@ -57,6 +59,37 @@ rawJsonAccess = testCase "complete raw JSON access" $
       withRawJsonByteString (\bytes -> pure bytes))
     "{\"payload\":{\"nested\":[1,true,null]}}"
     @?= Right "{\"nested\":[1,true,null]}"
+
+scientificMatchesAeson :: TestTree
+scientificMatchesAeson = testProperty "Scientific Matches Aeson" $
+  property $ do
+    num <- forAll genNumberToken
+    pad <- forAll $ Gen.element ["", " ", "\n "]
+    let input = T.encodeUtf8 $ "[" <> pad <> num <> pad <> "]"
+    either (const Nothing) Just (decodeEither (list scientific) input)
+      === (A.decodeStrict input :: Maybe [Scientific])
+  where
+    digits lo hi = Gen.text (Range.linear lo hi) Gen.digit
+    genNumberToken = do
+      sign <- Gen.element ["", "-"]
+      whole <- Gen.choice [pure "0", (<>) <$> (T.singleton <$> Gen.element ['1'..'9']) <*> digits 0 30]
+      frac <- Gen.maybe (digits 1 30)
+      ex <- Gen.maybe $ (\e es ds -> e <> es <> ds)
+        <$> Gen.element ["e", "E"] <*> Gen.element ["", "+", "-"] <*> digits 1 3
+      pure $ sign <> whole <> maybe "" ("." <>) frac <> maybe "" Prelude.id ex
+
+fmtErr :: Either HermesException a -> Either Text a
+fmtErr = either (Left . formatException) Right
+
+scientificCases :: TestTree
+scientificCases = testCase "Scientific" $ do
+  decodeEither (list scientific) "[1.5,-0.25e3,007,1E+2,+5,-123456789012345678901.5e-3]"
+    @?= Right [1.5, -250, 7, 100, 5, -123456789012345678.9015]
+  decodeEither (object $ atKey "a" scientific) "{ \"a\": 1.5 }" @?= Right 1.5
+  fmtErr (decodeEither (list scientific) "[\"1\"]")
+    @?= Left "Error in /0: Error while getting value of type scientific. INCORRECT_TYPE: The JSON element does not have the requested type."
+  fmtErr (decodeEither (list scientific) "[1.e5]")
+    @?= Left "Error in /0: Error while getting value of type scientific. NUMBER_ERROR: Problem while parsing a number"
 
 rtRecursiveDataType :: TestTree
 rtRecursiveDataType = testProperty "Round Trip With Recursive Data Type" $

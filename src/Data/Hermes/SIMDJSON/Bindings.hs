@@ -24,6 +24,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , getObjectIterFromValueImpl
   , getRawJSONTokenImpl
   , getRawJSONImpl
+  , getScientificImpl
   , getStringImpl
   , getTypeImpl
   , intArrayImpl
@@ -39,6 +40,7 @@ module Data.Hermes.SIMDJSON.Bindings
   , resetObjectImpl
   ) where
 
+import           Data.Int (Int64)
 import           Foreign.C (CBool(..), CInt(..), CSize(..), CString)
 import           Foreign.Ptr (FunPtr, Ptr)
 
@@ -152,6 +154,9 @@ foreign import ccall unsafe "get_raw_json" getRawJSONImpl
 
 foreign import ccall unsafe "get_type" getTypeImpl
   :: Value -> Ptr CInt -> IO CInt
+
+foreign import ccall unsafe "get_scientific" getScientificImpl
+  :: Value -> Ptr Int64 -> IO CInt
 
 foreign import ccall unsafe "is_null" isNullImpl
   :: Value -> Ptr CBool -> IO CInt

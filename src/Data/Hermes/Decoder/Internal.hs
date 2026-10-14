@@ -30,6 +30,7 @@ module Data.Hermes.Decoder.Internal
   , withHermesEnv_
   , typePrefix
   , handleErrorCode
+  , throwErrorCode
   , parseByteString
   , parseByteStringIO
   , liftIO
@@ -250,7 +251,7 @@ mkHermesEnv :: Maybe Int -> IO HermesEnv
 mkHermesEnv mCapacity = do
   parser   <- mkSIMDParser mCapacity
   document <- mkSIMDDocument
-  scratchBuf <- F.mallocForeignPtrBytes 16
+  scratchBuf <- F.mallocForeignPtrBytes 48
   pure HermesEnv
     { hParser   = parser
     , hDocument = document
@@ -336,10 +337,15 @@ handleErrorCode pre errInt = do
   let errCode = toEnum $ fromIntegral errInt
   if errCode == SUCCESS
   then pure ()
-  else do
-    errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
-    throwSIMD . T.strip $ T.unwords [pre, T.pack errStr]
+  else throwErrorCode pre errInt
 {-# INLINE handleErrorCode #-}
+
+-- | Throw the simdjson error for a non-zero error code.
+throwErrorCode :: Text -> F.CInt -> DecoderM a
+throwErrorCode pre errInt = do
+  errStr <- liftIO $ F.peekCString =<< getErrorMessageImpl errInt
+  throwSIMD . T.strip $ T.unwords [pre, T.pack errStr]
+{-# NOINLINE throwErrorCode #-}
 
 withRunInIO :: ((forall a. DecoderM a -> IO a) -> IO b) -> DecoderM b
 withRunInIO inner =
@@ -355,7 +361,7 @@ asks :: (HermesEnv -> a) -> DecoderM a
 asks f = DecoderM . ReaderT $ pure . f
 {-# INLINE asks #-}
 
--- | Two words for FFI out-parameters, shared by all primitive decoders.
+-- | Six words for FFI out-parameters, shared by all primitive decoders.
 -- Read results before making another FFI call.
 scratch :: DecoderM (F.Ptr a)
 scratch = asks (F.castPtr . F.unsafeForeignPtrToPtr . hScratch)

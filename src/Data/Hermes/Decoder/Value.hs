@@ -21,7 +21,6 @@ module Data.Hermes.Decoder.Value
   , objectFold
   , objectAsMap
   , objectAsMapExcluding
-  , parseScientific
   , scientific
   , string
   , text
@@ -47,6 +46,7 @@ import           Control.Monad ((>=>))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as Unsafe
 import qualified Data.DList as DList
+import           Data.Integer.Conversion (byteStringToInteger)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.Scientific as Sci
@@ -66,7 +66,6 @@ import qualified Foreign.Ptr as F
 import qualified Foreign.Storable as F
 
 import           Data.Hermes.Decoder.Internal
-import           Data.Hermes.Decoder.Internal.Scientific
 import           Data.Hermes.Decoder.Path
 import           Data.Hermes.SIMDJSON
 
@@ -321,19 +320,31 @@ double = Decoder getDouble
 
 -- | Parse a Scientific from a Value.
 scientific :: Decoder Sci.Scientific
-scientific = withRawText parseScientific
+scientific = Decoder $ \val -> do
+  out <- scratch
+  st <- liftIO $ getScientificImpl val out
+  let word i = liftIO $ F.peekElemOff out i
+  if | st == 0 -> do
+         coef <- word 0
+         expo <- word 1
+         pure $! Sci.scientific (toInteger coef) (fromIntegral expo)
+     | st == -1 -> do
+         sign <- word 0
+         expo <- word 1
+         digits <- liftIO $ (<>) <$> peekSpan out 2 <*> peekSpan out 4
+         let coef = byteStringToInteger digits
+         pure $! Sci.scientific (if sign < 0 then negate coef else coef) (fromIntegral expo)
+     | otherwise -> throwErrorCode (typePrefix "scientific") st
+  where
+    peekSpan out i = do
+      ptr <- F.peekElemOff out i
+      len <- F.peekElemOff out (i + 1)
+      Unsafe.unsafePackCStringLen (F.intPtrToPtr (fromIntegral ptr), fromIntegral len)
 {-# INLINE scientific #-}
 
 withScientific :: (Sci.Scientific -> Decoder a) -> Decoder a
 withScientific f = Decoder $ \val -> runDecoder scientific val >>= \sci -> runDecoder (f sci) val
 {-# INLINE withScientific #-}
-
--- | Parse a Scientific from UTF-8 text.
-parseScientific :: Text -> Decoder Sci.Scientific
-parseScientific = scanScientific
-    (\sci rest -> if T.null rest then return sci else fail $ "Expecting end-of-input, got " ++ show (T.take 10 rest))
-    fail
-{-# INLINE parseScientific #-}
 
 -- | Get the simdjson type of the Value.
 getType :: Decoder ValueType

@@ -216,6 +216,61 @@ extern "C" {
     return SUCCESS;
   }
 
+  // Parses a number token as coefficient * 10^exponent. Writes to out:
+  //   [0] coefficient, or its sign when the digits do not fit in int64
+  //   [1] exponent
+  //   [2..5] integer digits and fraction digits as (pointer, length) pairs
+  // Returns 0, -1 when the coefficient must be built from the digits,
+  // or an error code.
+  int get_scientific(ondemand::value &val, int64_t *out) {
+    std::string_view tok = val.raw_json_token();
+    const char *p = tok.data();
+    const char *end = p + tok.size();
+    auto digit = [&] { return p < end && unsigned(*p - '0') < 10; };
+    if (p == end || !(*p == '-' || *p == '+' || unsigned(*p - '0') < 10)) { return INCORRECT_TYPE; }
+    bool neg = *p == '-';
+    if (*p == '-' || *p == '+') { ++p; }
+    uint64_t m = 0;
+    const char *intStart = p;
+    while (digit()) { m = m * 10 + unsigned(*p - '0'); ++p; }
+    const char *intEnd = p;
+    if (intStart == intEnd) { return NUMBER_ERROR; }
+    const char *fracStart = p;
+    const char *fracEnd = p;
+    if (p < end && *p == '.') {
+      fracStart = ++p;
+      while (digit()) { m = m * 10 + unsigned(*p - '0'); ++p; }
+      fracEnd = p;
+      if (fracStart == fracEnd) { return NUMBER_ERROR; }
+    }
+    int64_t e = 0;
+    if (p < end && (*p == 'e' || *p == 'E')) {
+      ++p;
+      bool eneg = p < end && *p == '-';
+      if (p < end && (*p == '+' || *p == '-')) { ++p; }
+      const char *expStart = p;
+      while (digit()) {
+        e = e * 10 + (*p - '0');
+        if (++p - expStart > 18) { return NUMBER_ERROR; }
+      }
+      if (p == expStart) { return NUMBER_ERROR; }
+      if (eneg) { e = -e; }
+    }
+    while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) { ++p; }
+    if (p != end) { return NUMBER_ERROR; }
+    out[1] = e - (fracEnd - fracStart);
+    if ((intEnd - intStart) + (fracEnd - fracStart) <= 18) {
+      out[0] = neg ? -int64_t(m) : int64_t(m);
+      return 0;
+    }
+    out[0] = neg ? -1 : 1;
+    out[2] = int64_t(reinterpret_cast<intptr_t>(intStart));
+    out[3] = intEnd - intStart;
+    out[4] = int64_t(reinterpret_cast<intptr_t>(fracStart));
+    out[5] = fracEnd - fracStart;
+    return -1;
+  }
+
   error_code is_null(ondemand::value &val, bool &out) {
     return val.is_null().get(out);
   }

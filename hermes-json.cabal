@@ -56,7 +56,6 @@ library
     Data.Hermes.SIMDJSON.Wrapper
   other-modules:
     Data.Hermes.Decoder.Internal
-    Data.Hermes.Decoder.Internal.Scientific
   build-depends:
     base               >= 4.13 && < 4.23,
     bytestring         >= 0.10.12 && < 0.13,
